@@ -252,14 +252,3 @@ jobs:
           $sizeSpark   = (Get-Item "target/release/spark.exe").Length
           $sizeSparkle = (Get-Item "target/release/sparkle.exe").Length
           $summary = @"
-## Windows ✅
-
-| Artifact | Size (bytes) | Asset name |
-| --- | ---: | --- |
-| spark | $sizeSpark | ${{ steps.names.outputs.SPARK_BARE }} |
-| sparkle | $sizeSparkle | ${{ steps.names.outputs.SPARKLE_BARE }} |
-
-- 📦 Extra: ${{ steps.names.outputs.SPARK_ZIP }}, ${{ steps.names.outputs.SPARKLE_ZIP }}
-- 🗂 Bundle: ${{ steps.names.outputs.BUNDLE }}
-"@
-          Add-Content -Path "$env:GITHUB_STEP_SUMMARY" -Value $summary
