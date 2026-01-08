@@ -1,0 +1,82 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release
+        id: release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+
+  build-release:
+    name: Build release assets
+    needs: ['create-release']
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-amd64
+          - os: macos-latest
+            name: macos-arm64
+          - os: windows-latest
+            name: windows-amd64
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build workspace (release)
+        run: cargo build --release --all
+
+      # Linux/Mac: загружаем бинарники напрямую
+      - name: Upload spark (Linux/Mac)
+        if: matrix.os != 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/release/spark
+
+      - name: Upload sparkle (Linux/Mac)
+        if: matrix.os != 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/release/sparkle
+
+      # Windows: пакуем .exe в zip для удобства
+      - name: Package spark.exe (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $releaseDir = "target/release"
+          if (!(Test-Path "$releaseDir/spark.exe")) { throw "spark.exe not found" }
+          Compress-Archive -Path "$releaseDir/spark.exe" -DestinationPath "spark-${{ matrix.name }}.zip" -Force
+
+      - name: Package sparkle.exe (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $releaseDir = "target/release"
+          if (!(Test-Path "$releaseDir/sparkle.exe")) { throw "sparkle.exe not found" }
+          Compress-Archive -Path "$releaseDir/sparkle.exe" -DestinationPath "sparkle-${{ matrix.name }}.zip" -Force
+
+      - name: Upload Windows assets
+        if: matrix.os == 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            spark-*.zip
+            sparkle-*.zip
+
