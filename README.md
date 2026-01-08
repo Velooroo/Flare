@@ -100,4 +100,3 @@ Spark uses **TLS** for all data transfer.
 ## License
 
 MIT © [VeloroLABS](https://github.com/Velooroo)
-```
