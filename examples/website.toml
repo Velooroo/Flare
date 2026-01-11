@@ -1,0 +1,10 @@
+# Static Website Example
+# Deploy a simple HTML/CSS/JS site
+
+[app]
+name = "my-website"
+version = "1.0.0"
+
+[web]
+domain = "mysite.local"    # Access at http://mysite.local:8080
+root = "./dist"            # Folder with your built files

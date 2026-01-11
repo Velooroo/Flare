@@ -1,87 +1,124 @@
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use common::{CommandConfig, execute_command};
-use std::env;
+use tracing::error;
 
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Deploy a repository to a device
-    Deploy {
-        /// Repository (e.g. kazilsky/test)
-        #[arg(short, long)]
-        repo: String,
-    },
+mod commands;
+mod tls;
 
-    /// Discover "Sparkle" devices in local network
-    Discover,
-}
-
-#[derive(Parser, Debug)]
-#[command(version, about = "Spark CLI - IoT Deployment Tool", long_about = None)]
-struct CLI {
+#[derive(Parser)]
+#[command(name = "flare", version, about = "Flare CLI")]
+struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    cmd: Cmd,
 
-    /// Target host for deploy
     #[arg(long, default_value = "127.0.0.1", global = true)]
     host: String,
 
-    /// Target port for deploy
     #[arg(long, default_value_t = 7530, global = true)]
     port: u16,
+}
 
-    /// Forge URL
-    #[arg(long, default_value = "http://localhost:8080", global = true)]
-    forge: String,
+#[derive(Subcommand)]
+enum Cmd {
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+    Deploy {
+        repo: String,
+        #[arg(long)]
+        device: Option<String>,
+        #[arg(long)]
+        github: bool,
+        #[arg(long, default_value = "http://localhost:8080")]
+        forge: String,
+        #[arg(long)]
+        token: Option<String>,
+        #[arg(long)]
+        user: Option<String>,
+    },
+    Start {
+        app: String,
+    },
+    Stop {
+        app: String,
+    },
+    Restart {
+        app: String,
+    },
+    Rollback {
+        app: String,
+    },
+    Discover,
+    Sync {
+        range: String,
+    },
+    Devices {
+        #[command(subcommand)]
+        action: Option<DeviceAction>,
+    },
+}
 
-    /// Forge username (or set SPARK_USER env)
-    #[arg(long, global = true)]
-    user: Option<String>,
+#[derive(Subcommand)]
+enum DeviceAction {
+    Rm { id: String },
+}
 
-    /// Forge password (or set SPARK_PASS env)
-    #[arg(long, global = true)]
-    pass: Option<String>,
-
-    /// Boolean parameter for understand, needable use github or not
-    #[arg(long, conflicts_with = "forge")]
-    github: bool,
+#[derive(Subcommand)]
+enum AuthAction {
+    Login,
+    Logout,
+    Status,
 }
 
 #[tokio::main]
 async fn main() {
-    let cli = CLI::parse();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
-    // Читаем из env, если не передано через аргументы
-    let user = cli.user.or_else(|| env::var("SPARK_USER").ok());
-    let pass = cli.pass.or_else(|| env::var("SPARK_PASS").ok());
+    let cli = Cli::parse();
 
-    let forge_url = if cli.github {
-        "github".to_string()
-    } else {
-        cli.forge
-    };
-
-    let config = CommandConfig {
-        auth_user: user,
-        auth_password: pass,
-        host: Some(cli.host),
-        port: Some(cli.port),
-        repo: None, // Заполним ниже
-        forge: Some(forge_url),
-        apps_dir: None,
-    };
-
-    let result = match cli.command {
-        Commands::Deploy { repo } => {
-            let mut cfg = config;
-            cfg.repo = Some(repo);
-            execute_command("cli", "deploy", cfg).await
-        }
-
-        Commands::Discover => execute_command("cli", "discover", config).await,
-    };
-
-    if let Err(e) = result {
-        eprintln!("❌ Error: {}", e);
+    if let Err(e) = run(cli).await {
+        error!("{}", e);
         std::process::exit(1);
+    }
+}
+
+async fn run(cli: Cli) -> Result<()> {
+    use commands::*;
+
+    match cli.cmd {
+        Cmd::Auth { action } => match action {
+            AuthAction::Login => auth::login(),
+            AuthAction::Logout => auth::logout(),
+            AuthAction::Status => auth::status(),
+        },
+        Cmd::Deploy {
+            repo,
+            device,
+            github,
+            forge,
+            token,
+            user,
+        } => {
+            if let Some(dev) = device {
+                // deploy to saved device
+                deploy::run_to_device(&dev, repo, github, forge, token, user).await
+            } else {
+                // deploy to host from CLI args
+                deploy::run(cli.host, cli.port, repo, github, forge, token, user).await
+            }
+        }
+        Cmd::Start { app } => apps::start(&app).await,
+        Cmd::Stop { app } => apps::stop(&app).await,
+        Cmd::Restart { app } => apps::restart(&app).await,
+        Cmd::Rollback { app } => apps::rollback(&app).await,
+        Cmd::Discover => discovery::discover().await,
+        Cmd::Sync { range } => discovery::sync(&range).await,
+        Cmd::Devices { action } => match action {
+            None => devices::list(),
+            Some(DeviceAction::Rm { id }) => devices::remove(&id),
+        },
     }
 }

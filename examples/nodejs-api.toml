@@ -1,0 +1,19 @@
+# Node.js API Example
+# Deploy a Node.js backend service
+
+[app]
+name = "node-api"
+version = "1.0.0"
+
+[build]
+command = "npm install"
+
+[run]
+command = "node server.js"
+port = 3000
+
+[health]
+url = "http://localhost:3000/health"
+
+[isolation]
+type = "systemd"

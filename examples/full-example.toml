@@ -1,0 +1,34 @@
+[app]
+name = "my-fullstack-app"
+version = "1.0.0"
+
+# Build app
+[build]
+command = "npm run build"
+
+# Starting backend app
+[run]
+command = "node dist/server.js"
+port = 3000
+
+# Isolation process
+[isolation]
+type = "systemd"
+
+# Auto settings DB
+[database]
+type = "postgres"
+name = "app_db"
+user = "dbuser"
+password = "secret"
+port = 5432
+preseed = "./db/schema.sql"
+
+# Hooks for automation
+[hooks]
+pre_deploy = "echo 'Starting deployment...'"
+post_deploy = "echo 'Deployment finished!'"
+
+# Notify
+[notify]
+on_success = ["mailto:admin@example.com"]

@@ -1,0 +1,20 @@
+# Python App Example
+# Deploy a Python Flask/Django app
+
+[app]
+name = "python-app"
+version = "1.0.0"
+
+[build]
+command = "pip install -r requirements.txt"
+
+[run]
+command = "python app.py"
+port = 5000
+
+[health]
+url = "http://localhost:5000/"
+timeout = 10
+
+[isolation]
+type = "none"
