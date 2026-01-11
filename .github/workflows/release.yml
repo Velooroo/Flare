@@ -48,60 +48,60 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "SPARK_BARE=os/linux/spark-${VERSION}-linux-amd64" >> "$GITHUB_OUTPUT"
-          echo "SPARK_TARGZ=os/linux/spark-${VERSION}-linux-amd64.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "SPARKLE_BARE=os/linux/sparkle-${VERSION}-linux-amd64" >> "$GITHUB_OUTPUT"
-          echo "SPARKLE_TARGZ=os/linux/sparkle-${VERSION}-linux-amd64.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "FLARE_BARE=os/linux/flare-${VERSION}-linux-amd64" >> "$GITHUB_OUTPUT"
+          echo "FLARE_TARGZ=os/linux/flare-${VERSION}-linux-amd64.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "FLARED_BARE=os/linux/flared-${VERSION}-linux-amd64" >> "$GITHUB_OUTPUT"
+          echo "FLARED_TARGZ=os/linux/flared-${VERSION}-linux-amd64.tar.gz" >> "$GITHUB_OUTPUT"
           echo "BUNDLE=os/linux/linux-amd64-${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: 📁 Arrange assets (bare + bundle)
         shell: bash
         run: |
           set -e
-          test -f target/release/spark
-          test -f target/release/sparkle
-          mkdir -p os/linux bundle/linux/all bundle/linux/spark bundle/linux/sparkle
+          test -f target/release/flare
+          test -f target/release/flared
+          mkdir -p os/linux bundle/linux/all bundle/linux/flare bundle/linux/flared
 
           # Bare copies with folder-like names
-          cp "target/release/spark"   "${{ steps.names.outputs.SPARK_BARE }}"
-          cp "target/release/sparkle" "${{ steps.names.outputs.SPARKLE_BARE }}"
+          cp "target/release/flare"   "${{ steps.names.outputs.FLARE_BARE }}"
+          cp "target/release/flared" "${{ steps.names.outputs.FLARED_BARE }}"
 
           # Structured bundle
-          cp target/release/spark   bundle/linux/all/
-          cp target/release/sparkle bundle/linux/all/
-          cp target/release/spark   bundle/linux/spark/
-          cp target/release/sparkle bundle/linux/sparkle/
+          cp target/release/flare   bundle/linux/all/
+          cp target/release/flared  bundle/linux/all/
+          cp target/release/flare   bundle/linux/flare/
+          cp target/release/flared  bundle/linux/flared/
           tar -czf "${{ steps.names.outputs.BUNDLE }}" -C bundle/linux .
 
           # Individual tar.gz (optional extras)
-          tar -czf "${{ steps.names.outputs.SPARK_TARGZ }}"   -C target/release spark
-          tar -czf "${{ steps.names.outputs.SPARKLE_TARGZ }}" -C target/release sparkle
+          tar -czf "${{ steps.names.outputs.FLARE_TARGZ }}"   -C target/release flare
+          tar -czf "${{ steps.names.outputs.FLARED_TARGZ }}" -C target/release flared
 
       - name: 🚀 Upload Linux assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ${{ steps.names.outputs.SPARK_BARE }}
-            ${{ steps.names.outputs.SPARKLE_BARE }}
-            ${{ steps.names.outputs.SPARK_TARGZ }}
-            ${{ steps.names.outputs.SPARKLE_TARGZ }}
+            ${{ steps.names.outputs.FLARE_BARE }}
+            ${{ steps.names.outputs.FLARED_BARE }}
+            ${{ steps.names.outputs.FLARE_TARGZ }}
+            ${{ steps.names.outputs.FLARED_TARGZ }}
             ${{ steps.names.outputs.BUNDLE }}
 
       - name: 🧾 Summary (Linux)
         shell: bash
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
-          SIZE_SPARK=$(stat -c%s target/release/spark || echo 0)
-          SIZE_SPARKLE=$(stat -c%s target/release/sparkle || echo 0)
+          SIZE_FLARE=$(stat -c%s target/release/flare || echo 0)
+          SIZE_FLARED=$(stat -c%s target/release/flared || echo 0)
           {
             echo "## Linux ✅"
             echo ""
             echo "| Artifact | Size (bytes) | Asset name |"
             echo "| --- | ---: | --- |"
-            echo "| spark | ${SIZE_SPARK} | ${{ steps.names.outputs.SPARK_BARE }} |"
-            echo "| sparkle | ${SIZE_SPARKLE} | ${{ steps.names.outputs.SPARKLE_BARE }} |"
+            echo "| flare | ${SIZE_FLARE} | ${{ steps.names.outputs.FLARE_BARE }} |"
+            echo "| flared | ${SIZE_FLARED} | ${{ steps.names.outputs.FLARED_BARE }} |"
             echo ""
-            echo "- 📦 Extra: ${{ steps.names.outputs.SPARK_TARGZ }}, ${{ steps.names.outputs.SPARKLE_TARGZ }}"
+            echo "- 📦 Extra: ${{ steps.names.outputs.FLARE_TARGZ }}, ${{ steps.names.outputs.FLARED_TARGZ }}"
             echo "- 🗂 Bundle: ${{ steps.names.outputs.BUNDLE }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -129,56 +129,56 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "SPARK_BARE=os/macos/spark-${VERSION}-macos-arm64" >> "$GITHUB_OUTPUT"
-          echo "SPARK_TARGZ=os/macos/spark-${VERSION}-macos-arm64.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "SPARKLE_BARE=os/macos/sparkle-${VERSION}-macos-arm64" >> "$GITHUB_OUTPUT"
-          echo "SPARKLE_TARGZ=os/macos/sparkle-${VERSION}-macos-arm64.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "FLARE_BARE=os/macos/flare-${VERSION}-macos-arm64" >> "$GITHUB_OUTPUT"
+          echo "FLARE_TARGZ=os/macos/flare-${VERSION}-macos-arm64.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "FLARED_BARE=os/macos/flared-${VERSION}-macos-arm64" >> "$GITHUB_OUTPUT"
+          echo "FLARED_TARGZ=os/macos/flared-${VERSION}-macos-arm64.tar.gz" >> "$GITHUB_OUTPUT"
           echo "BUNDLE=os/macos/macos-arm64-${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: 📁 Arrange assets (bare + bundle)
         shell: bash
         run: |
           set -e
-          test -f target/release/spark
-          test -f target/release/sparkle
-          mkdir -p os/macos bundle/macos/all bundle/macos/spark bundle/macos/sparkle
+          test -f target/release/flare
+          test -f target/release/flared
+          mkdir -p os/macos bundle/macos/all bundle/macos/flare bundle/macos/flared
 
-          cp "target/release/spark"   "${{ steps.names.outputs.SPARK_BARE }}"
-          cp "target/release/sparkle" "${{ steps.names.outputs.SPARKLE_BARE }}"
+          cp "target/release/flare"   "${{ steps.names.outputs.FLARE_BARE }}"
+          cp "target/release/flared" "${{ steps.names.outputs.FLARED_BARE }}"
 
-          cp target/release/spark   bundle/macos/all/
-          cp target/release/sparkle bundle/macos/all/
-          cp target/release/spark   bundle/macos/spark/
-          cp target/release/sparkle bundle/macos/sparkle/
+          cp target/release/flare   bundle/macos/all/
+          cp target/release/flared bundle/macos/all/
+          cp target/release/flare   bundle/macos/flare/
+          cp target/release/flared bundle/macos/flared/
           tar -czf "${{ steps.names.outputs.BUNDLE }}" -C bundle/macos .
 
-          tar -czf "${{ steps.names.outputs.SPARK_TARGZ }}"   -C target/release spark
-          tar -czf "${{ steps.names.outputs.SPARKLE_TARGZ }}" -C target/release sparkle
+          tar -czf "${{ steps.names.outputs.FLARE_TARGZ }}"   -C target/release flare
+          tar -czf "${{ steps.names.outputs.FLARED_TARGZ }}" -C target/release flared
 
       - name: 🚀 Upload macOS assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ${{ steps.names.outputs.SPARK_BARE }}
-            ${{ steps.names.outputs.SPARKLE_BARE }}
-            ${{ steps.names.outputs.SPARK_TARGZ }}
-            ${{ steps.names.outputs.SPARKLE_TARGZ }}
+            ${{ steps.names.outputs.FLARE_BARE }}
+            ${{ steps.names.outputs.FLARED_BARE }}
+            ${{ steps.names.outputs.FLARE_TARGZ }}
+            ${{ steps.names.outputs.FLARED_TARGZ }}
             ${{ steps.names.outputs.BUNDLE }}
 
       - name: 🧾 Summary (macOS)
         shell: bash
         run: |
-          SIZE_SPARK=$(stat -f%z target/release/spark || echo 0)
-          SIZE_SPARKLE=$(stat -f%z target/release/sparkle || echo 0)
+          SIZE_FLARE=$(stat -f%z target/release/flare || echo 0)
+          SIZE_FLARED=$(stat -f%z target/release/flared || echo 0)
           {
             echo "## macOS ✅"
             echo ""
             echo "| Artifact | Size (bytes) | Asset name |"
             echo "| --- | ---: | --- |"
-            echo "| spark | ${SIZE_SPARK} | ${{ steps.names.outputs.SPARK_BARE }} |"
-            echo "| sparkle | ${SIZE_SPARKLE} | ${{ steps.names.outputs.SPARKLE_BARE }} |"
+            echo "| flare | ${SIZE_FLARE} | ${{ steps.names.outputs.FLARE_BARE }} |"
+            echo "| flared | ${SIZE_FLARED} | ${{ steps.names.outputs.FLARED_BARE }} |"
             echo ""
-            echo "- 📦 Extra: ${{ steps.names.outputs.SPARK_TARGZ }}, ${{ steps.names.outputs.SPARKLE_TARGZ }}"
+            echo "- 📦 Extra: ${{ steps.names.outputs.FLARE_TARGZ }}, ${{ steps.names.outputs.FLARED_TARGZ }}"
             echo "- 🗂 Bundle: ${{ steps.names.outputs.BUNDLE }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -206,49 +206,49 @@ jobs:
         run: |
           $v = "${env:GITHUB_REF}".Replace("refs/tags/","")
           echo "VERSION=$v" >> $env:GITHUB_OUTPUT
-          echo "SPARK_BARE=os/windows/spark-$v-windows-amd64.exe"     >> $env:GITHUB_OUTPUT
-          echo "SPARKLE_BARE=os/windows/sparkle-$v-windows-amd64.exe" >> $env:GITHUB_OUTPUT
-          echo "SPARK_ZIP=os/windows/spark-$v-windows-amd64.zip"      >> $env:GITHUB_OUTPUT
-          echo "SPARKLE_ZIP=os/windows/sparkle-$v-windows-amd64.zip"  >> $env:GITHUB_OUTPUT
+          echo "FLARE_BARE=os/windows/flare-$v-windows-amd64.exe"     >> $env:GITHUB_OUTPUT
+          echo "FLARED_BARE=os/windows/flared-$v-windows-amd64.exe" >> $env:GITHUB_OUTPUT
+          echo "FLARE_ZIP=os/windows/flare-$v-windows-amd64.zip"      >> $env:GITHUB_OUTPUT
+          echo "FLARED_ZIP=os/windows/flared-$v-windows-amd64.zip"  >> $env:GITHUB_OUTPUT
           echo "BUNDLE=os/windows/windows-amd64-$v.zip"               >> $env:GITHUB_OUTPUT
 
       - name: 📁 Arrange assets (bare + bundle + zip)
         shell: pwsh
         run: |
           $releaseDir = "target/release"
-          if (!(Test-Path "$releaseDir/spark.exe")) { throw "spark.exe not found in $releaseDir" }
-          if (!(Test-Path "$releaseDir/sparkle.exe")) { throw "sparkle.exe not found in $releaseDir" }
+          if (!(Test-Path "$releaseDir/flare.exe")) { throw "flare.exe not found in $releaseDir" }
+          if (!(Test-Path "$releaseDir/flared.exe")) { throw "flared.exe not found in $releaseDir" }
 
           New-Item -ItemType Directory -Force os/windows | Out-Null
           New-Item -ItemType Directory -Force bundle/windows/all     | Out-Null
-          New-Item -ItemType Directory -Force bundle/windows/spark   | Out-Null
-          New-Item -ItemType Directory -Force bundle/windows/sparkle | Out-Null
+          New-Item -ItemType Directory -Force bundle/windows/flare   | Out-Null
+          New-Item -ItemType Directory -Force bundle/windows/flared | Out-Null
 
-          Copy-Item "$releaseDir/spark.exe"   "${{ steps.names.outputs.SPARK_BARE }}"
-          Copy-Item "$releaseDir/sparkle.exe" "${{ steps.names.outputs.SPARKLE_BARE }}"
+          Copy-Item "$releaseDir/flare.exe"   "${{ steps.names.outputs.FLARE_BARE }}"
+          Copy-Item "$releaseDir/flared.exe" "${{ steps.names.outputs.FLARED_BARE }}"
 
-          Copy-Item "$releaseDir/spark.exe"   "bundle/windows/all/"
-          Copy-Item "$releaseDir/sparkle.exe" "bundle/windows/all/"
-          Copy-Item "$releaseDir/spark.exe"   "bundle/windows/spark/"
-          Copy-Item "$releaseDir/sparkle.exe" "bundle/windows/sparkle/"
+          Copy-Item "$releaseDir/flare.exe"   "bundle/windows/all/"
+          Copy-Item "$releaseDir/flared.exe" "bundle/windows/all/"
+          Copy-Item "$releaseDir/flare.exe"   "bundle/windows/flare/"
+          Copy-Item "$releaseDir/flared.exe" "bundle/windows/flared/"
 
-          Compress-Archive -Path "$releaseDir/spark.exe"   -DestinationPath "${{ steps.names.outputs.SPARK_ZIP }}" -Force
-          Compress-Archive -Path "$releaseDir/sparkle.exe" -DestinationPath "${{ steps.names.outputs.SPARKLE_ZIP }}" -Force
+          Compress-Archive -Path "$releaseDir/flare.exe"   -DestinationPath "${{ steps.names.outputs.FLARE_ZIP }}" -Force
+          Compress-Archive -Path "$releaseDir/flared.exe" -DestinationPath "${{ steps.names.outputs.FLARED_ZIP }}" -Force
           Compress-Archive -Path "bundle/windows/*"        -DestinationPath "${{ steps.names.outputs.BUNDLE }}"     -Force
 
       - name: 🚀 Upload Windows assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ${{ steps.names.outputs.SPARK_BARE }}
-            ${{ steps.names.outputs.SPARKLE_BARE }}
-            ${{ steps.names.outputs.SPARK_ZIP }}
-            ${{ steps.names.outputs.SPARKLE_ZIP }}
+            ${{ steps.names.outputs.FLARE_BARE }}
+            ${{ steps.names.outputs.FLARED_BARE }}
+            ${{ steps.names.outputs.FLARE_ZIP }}
+            ${{ steps.names.outputs.FLARED_ZIP }}
             ${{ steps.names.outputs.BUNDLE }}
 
       - name: 🧾 Summary (Windows)
         shell: pwsh
         run: |
-          $sizeSpark   = (Get-Item "target/release/spark.exe").Length
-          $sizeSparkle = (Get-Item "target/release/sparkle.exe").Length
+          $sizeSpark   = (Get-Item "target/release/flare.exe").Length
+          $sizeSparkle = (Get-Item "target/release/flared.exe").Length
           $summary = @"
