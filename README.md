@@ -1,43 +1,56 @@
-# ⚡ Spark
+# Flare
 
-[![Release](https://img.shields.io/github/v/release/Velooroo/spark)](https://github.com/Velooroo/Spark/releases)
-[![License](https://img.shields.io/github/license/Velooroo/Spark)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Velooroo/Flare)](https://github.com/Velooroo/flare/releases)
+[![License](https://img.shields.io/github/license/Velooroo/Flare)](LICENSE)
 
-**The decentralized deployment toolchain for the edge.**
+**Lightweight deployment for edge devices and homelabs.**
 
-Spark replaces complex Ansible setups and Docker registries with a lightweight, single-binary ecosystem designed for IoT devices, home labs, and cyberdecks.
+Flare replaces complex CI/CD pipelines with a single-binary toolchain built for IoT, Raspberry Pi, and local servers.
 
-> **Zero Dependencies.** No Python, no Node.js, no Docker required on the target.
+> **No dependencies.** No Python, Node.js, or Docker required on target devices.
 
-## ✨ Features
-
-- **Push-to-Deploy:** Ship code from your laptop to Raspberry Pi in seconds.
-- **Auto-Discovery:** Finds devices in your local network via UDP broadcast.
-- **Built-in Gateway:** Automatic reverse proxy (Virtual Hosts) for web apps.
-- **Secure:** TLS encryption for all data transfers.
-- **Universal:** Supports GitHub, GitLab, and self-hosted Forge servers.
+![Demo](assets/demo.gif)
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### 1. Install (Developer & Server)
-Download the binary from [Releases](https://github.com/Velooroo/Spark/releases) or build from source:
+- **Push-to-Deploy:** Ship from laptop to device in seconds
+- **Auto-Discovery:** Finds devices via UDP broadcast
+- **Built-in Gateway:** Reverse proxy for static sites and apps
+- **Secure:** TLS encryption by default
+- **Works Everywhere:** GitHub, GitLab, Forge, or any other git.
+- **Database Support:** Auto-setup PostgreSQL, MySQL, or SQLite
+- **Rollback:** Built-in versioning and rollback system
+- **Hooks:** Run custom scripts before/after deployment
+- **Isolation:** SystemD or chroot process isolation
+
+---
+
+## Quick Start
+
+### 1. Install
+
+Download from [Releases](https://github.com/Velooroo/Flare/releases) or build:
 
 ```bash
-cargo install --path .
+cargo build --release
 ```
 
-### 2. Setup the Target Device (Daemon)
-Run this on your Raspberry Pi / VPS:
+### 2. Start Daemon (on target device)
+
+Run on your Raspberry Pi, VPS, or homelab server:
 
 ```bash
-# Starts TCP listener (7530) and UDP discovery (7001)
-sparkle
+flared
+# Listens on :7530 (TCP) and :7001 (UDP discovery)
 ```
 
-### 3. Configure Your App
-Create `spark.toml` in your project root. See `examples/` for templates:
+<img width="358" height="67" alt="Flare daemon starting" src="https://github.com/user-attachments/assets/dc4686fb-bd04-4f70-ac00-7de54a8ed4f9" />
+
+### 3. Add Config to Your Project
+
+Create `flare.toml` in your repo root:
 
 ```toml
 [app]
@@ -47,323 +60,380 @@ version = "1.0.0"
 [run]
 command = "node server.js"
 port = 3000
-
-auto_health = true
 ```
 
-### 4. Deploy from your Machine (CLI)
+### 4. Deploy
 
 ```bash
-# Deploy to auto-discovered device
-spark deploy --repo user/my-project
+# Auto-discover device in local network
+flare deploy user/my-project
 
-# Or specify target
-spark deploy --repo user/my-project --host 192.168.1.100 --port 7530
+# Or specify host
+flare deploy user/my-project --host 192.168.1.100
+
+# With GitHub
+flare deploy user/my-project --github --token ghp_xxxxx
+
+# With custom forge
+flare deploy user/my-project --forge http://{ip}
 ```
 
-### 5. Manage Apps
+<img width="791" height="207" alt="Deployment output" src="https://github.com/user-attachments/assets/7ca91006-224f-433b-8c3c-027af7427903" />
+
+```markdown
+## Quick Start
+
+### 1. Install
+
+Download from [Releases](https://github.com/Velooroo/flare/releases) or build:
 
 ```bash
-# Control running apps
-spark start my-app
-spark stop my-app
-spark restart my-app
-spark rollback my-app
-
-# Deploy with overrides
-spark deploy --repo user/my-app --auto-health  # Force health check
-spark deploy --repo user/my-app --isolation systemd  # Override isolation
+cargo build --release
 ```
 
-### 2. Setup the Target Device (Daemon)
-Run this on your Raspberry Pi / VPS:
+### 2. Start Daemon (on target device)
 
 ```bash
-# Starts TCP listener (7530) and UDP discovery (7001)
-sparkle
+flared
+# Listens on :7530 (TCP) and :7001 (UDP discovery)
 ```
 
-<img width="358" height="67" alt="image" src="https://github.com/user-attachments/assets/dc4686fb-bd04-4f70-ac00-7de54a8ed4f9" />
+### 3. Setup Authentication
 
-
-### 3. Deploy from your Machine (CLI)
-
-Add a `spark.toml` to your project and deploy:
-
+**Git credentials** (for downloading repos):
 ```bash
-# Auto-discover device and deploy
-spark deploy --repo user/my-project
-
-# Add automatic health check if app doesn't have one
-spark deploy --repo user/my-project --auto-health
+flare login
+Username: your-username
+Password: your-git-(token or password)
 ```
 
- <img width="791" height="207" alt="image" src="https://github.com/user-attachments/assets/7ca91006-224f-433b-8c3c-027af7427903" />
-
-### 5. Manage Apps
-
+**Device registration** (auto-generates secure token):
 ```bash
-# Control running apps
-spark start my-app
-spark stop my-app
-spark restart my-app
-spark rollback my-app
+flare discover
+# [0] 192.168.1.50:7530 (new)
+
+flare sync 0
+# Registering token... ✓
+# Name: raspberrypi
+# ✓ Saved
 ```
 
-## 🧪 Testing Guide
+### 4. Add Config to Your Project
 
-### Local Testing (No Hardware Needed)
-
-1. **Build Spark**:
-   ```bash
-   cargo build --release
-   ```
-
-2. **Start Daemon Locally**:
-   ```bash
-   ./target/release/sparkle
-   ```
-
-3. **Create Test App**:
-   ```bash
-   mkdir test-app && cd test-app
-   echo 'console.log("Hello from Spark!"); setInterval(() => {}, 1000);' > server.js
-   echo '{"name": "test-app", "version": "1.0.0", "scripts": {"start": "node server.js"}}' > package.json
-   ```
-
-4. **Create spark.toml**:
-   ```toml
-   [app]
-   name = "test-app"
-   version = "1.0.0"
-
-   [run]
-   command = "node server.js"
-   port = 3000
-
-   auto_health = true
-   ```
-
-5. **Deploy**:
-   ```bash
-   # In another terminal
-   spark deploy --repo test-app --host 127.0.0.1
-   ```
-
-6. **Test Management**:
-   ```bash
-   spark start test-app
-   spark stop test-app
-   curl http://localhost:3000/health  # Should work with auto-health
-   ```
-
-### Remote Testing
-
-1. Copy `spark` and `sparkle` binaries to your target device
-2. Run `sparkle` on device
-3. Use `spark deploy --repo your-repo --host device-ip` from dev machine
-
-### Troubleshooting
-
-- **Connection Issues**: Check firewall, ensure ports 7530 (TCP) and 7001 (UDP) are open
-- **Health Checks Fail**: Verify your app listens on the specified port
-- **Docker DB Issues**: Ensure Docker is installed and running on target device
-- **Permission Errors**: Run daemon with appropriate permissions for systemd isolation
-
----
-
-## 🛠 Configuration (`spark.toml`)
-
-Place this file in the root of your project. See `examples/` for ready-to-use templates.
-
-**CLI flags override TOML settings** - you can use either or both.
-
-### Quick Reference:
-- `[app]` - Required: name and version of your app
-- `[build]` - Optional: commands to build/compile your app
-- `[run]` - For backend services: command and port
-- `[web]` - For static sites: domain and root folder
-- `[health]` - Optional: custom health check endpoint
-- `auto_health` - Optional: auto health check (boolean)
-- `[isolation]` - Optional: process isolation (systemd/chroot/none)
-
-### Simple Web App
+Create `flare.toml` in repo root:
 
 ```toml
 [app]
-name = "my-web-app"
+name = "my-app"
 version = "1.0.0"
-
-[web]
-domain = "myapp.local"  # Access at http://myapp.local:8080
-root = "./dist"         # Folder with index.html
-```
-
-### Backend Service
-
-```toml
-[app]
-name = "api-server"
-version = "1.0.0"
-
-[build]                 # Optional: build before run
-command = "npm run build"
 
 [run]
 command = "node server.js"
-port = 3000             # Used for auto-health if --auto-health flag
-
-[health]                # Optional: custom health check
-url = "http://localhost:3000/health"
-timeout = 10
-
-# OR: auto health check (alternative to [health])
-auto_health = true     # Auto-check main port if no custom [health]
-
-[isolation]             # Optional: process isolation
-type = "systemd"       # systemd, chroot, none
-
-[database]             # Optional: auto database setup
-type = "postgres"
-name = "myapp_db"
-user = "dbuser"
-password = "secret"
-port = 5432
-preseed = "./db/init.sql"
-
-[storage]              # Optional: storage setup
-type = "s3"
-bucket = "mybucket"
-endpoint = "https://s3.amazonaws.com"
-
-[hooks]                # Optional: custom scripts
-pre_deploy = "sh ./scripts/pre.sh"
-post_deploy = "sh ./scripts/post.sh"
-
-[notify]               # Optional: notifications
-on_success = ["mailto:admin@example.com"]
-on_fail = ["telegram:@mychannel"]
-```
-
-**More examples:** Check `examples/` folder for Node.js, Python, and static site configs.
-
-## 🛠 Advanced Features
-
-Spark supports advanced deployment configurations for complex applications:
-
-### Database Auto-Setup
-Automatically deploy and configure databases using Docker:
-
-```toml
-[database]
-type = "postgres"      # postgres, mysql, sqlite
-name = "myapp_db"
-user = "dbuser"
-password = "secret"
-port = 5432
-preseed = "./db/init.sql"  # Optional: SQL file to execute after setup
-```
-
-Spark will:
-- Pull and run the appropriate Docker container
-- Configure environment variables
-- Wait for database to be ready
-- Execute preseed SQL if provided
-- Make database accessible on specified port
-
-### Storage Integration
-Integrate with S3-compatible storage:
-
-```toml
-[storage]
-type = "s3"            # s3, minio
-bucket = "mybucket"
-endpoint = "https://s3.amazonaws.com"
-access_key = "AKIA..."
-secret_key = "..."
-```
-
-### Deployment Hooks
-Run custom scripts before/after deployment:
-
-```toml
-[hooks]
-pre_deploy = "sh ./scripts/backup.sh"
-post_deploy = "sh ./scripts/notify.sh"
-```
-
-### Notifications
-Get notified on deployment success/failure:
-
-```toml
-[notify]
-on_success = ["mailto:admin@example.com", "telegram:@mychannel"]
-on_fail = ["mailto:devops@example.com"]
-```
-
-### Resource Limits
-Set memory/CPU limits:
-
-```toml
-[resource_limits]
-memory = "256MB"
-cpu = "0.5"
-timeout = "300s"
-```
-
-### Secrets Management
-Inject secrets from environment:
-
-```toml
-[secrets]
-API_KEY = "env:MY_API_KEY"
-DB_PASS = "env:DATABASE_PASSWORD"
-```
-
-### Deployment Strategies
-Use canary or blue-green deployments:
-
-```toml
-[strategy]
-type = "canary"        # canary, bluegreen, rolling
-percent = 20
-wait_time = "60s"
-```
-
-### Backend Service (Python/Rust/Node)
-
-```toml
-[app]
-name = "sensor-api"
-version = "0.1.0"
-
-[build]
-command = "cargo build --release"
-
-[run]
-command = "./target/release/sensor-api"
 port = 3000
+```
+
+### 5. Deploy
+
+```bash
+# Deploy to saved device
+flare deploy user/my-project --device 0 
+## (I don't remember, it's works or not.)
+
+# Or by name
+flare deploy user/my-project --device raspberrypi
+```
+
+### 6. Manage Apps
+
+```bash
+flare start my_app      # Start application
+flare stop my_app       # Stop application
+flare restart my_app    # Restart application
+flare rollback my_app   # Rollback to previous version
 ```
 
 ---
 
-## 📦 How it works
+## Authentication
 
-1.  **Spark CLI** packs your repository (from GitHub or Forge).
-2.  Connects to **Sparkle Daemon** via TLS-encrypted TCP.
-3.  **Daemon** downloads, extracts, and builds the application.
-4.  **Daemon** launches the process or registers the domain in the internal Gateway.
+Flare uses dual authentication for security:
 
-## 🔐 Security
+### Git Authentication
+Used for downloading repositories from GitHub/Forgejo/etc.
 
-Spark uses **TLS** for all data transfer.
-- **Local Network:** Uses self-signed certificates automatically.
-- **Internet/Production:** Supports Let's Encrypt / Custom certificates via env vars:
-  - `SPARK_TLS_CERT_FILE`
-  - `SPARK_TLS_KEY_FILE`
+```bash
+flare login
+Username: myuser
+Password: ghp_xxxxx  # GitHub token or Forge password
+```
+
+Stored in `~/.flare/auth.toml`
+
+### Daemon Authentication
+Used for connecting to devices. Automatically generated during sync.
+
+```bash
+flare discover    # Find devices
+flare sync 0      # Generate and register token
+```
+
+**How it works:**
+1. CLI generates random 32-byte token
+2. Hashes it with argon2
+3. Sends hash to daemon
+4. Daemon stores hash in `~/.flare/daemon_tokens.toml`
+5. CLI stores plain token in `~/.flare/flare.conf`
+
+All future deploys use this token automatically.
+
+---
+
+## Testing Guide
+
+### Local Testing
+
+```bash
+# 1. Start daemon
+cargo run --bin flared
+
+# 2. Auth
+cargo run --bin flare -- login
+# Username: test
+# Password: token123
+
+cargo run --bin flare -- discover
+cargo run --bin flare -- sync 0
+
+# 3. Create test repo (or use existing)
+mkdir test-app && cd test-app
+echo 'console.log("Hello");' > index.js
+
+cat > flare.toml << EOF
+[app]
+name = "test"
+version = "1.0.0"
+
+[run]
+command = "node index.js"
+EOF
+
+git init && git add . && git commit -m "init"
+# Push to your forge
+
+# 4. Deploy
+cargo run --bin flare -- deploy youruser/test-app --device 0
+
+# 5. Manage
+cargo run --bin flare -- stop test_app
+cargo run --bin flare -- start test_app
+```
+
+### Remote Testing
+
+```bash
+# Copy binaries to device
+scp target/release/flared pi@192.168.1.100:/usr/local/bin/
+
+# SSH and start daemon
+ssh pi@192.168.1.100 "flared"
+
+# From local machine
+flare discover
+flare sync 0
+flare deploy user/repo --device 0
+```
+
+### Troubleshooting
+
+**"No devices configured"**
+→ Run `flare discover && flare sync 0` first
+
+**"Invalid token"**
+→ Re-sync device: `flare sync 0` and replace token
+
+**"App not found"**
+→ Use `_` in app names: `flare stop user_repo` not `user/repo` (already fix it)
+
+**Connection refused**
+→ Check firewall: `sudo ufw allow 7530/tcp && sudo ufw allow 7001/udp`
+
+**start command fails**
+→ Only works for apps with `[run]` section (static sites not supported yet, see [#1](issues))
+
+---
+
+## Known Issues
+
+- [x] App names with `/` must use `_` in management commands [#2]
+- [ ] `flare start` doesn't work for static sites (`[web]` only apps) [#1]
+- [ ] Gateway reverse proxy not implemented (static sites only)
+
+
+---
+
+## How It Works
+
+```
+CLI (your laptop)              Daemon (target device)
+     |                                |
+     | 1. Package repo                |
+     |------------------------------->|
+     |                                | 2. Download archive
+     |                                | 3. Extract to ~/.flare/apps/
+     |                                | 4. Read flare.toml
+     |                                | 5. Run [build] if present
+     |                                | 6. Setup [database] if present
+     |                                | 7. Start [run] or register [web]
+     |<-------------------------------|
+     | 8. Receive success/error       |
+```
+
+**File Structure:**
+```
+~/.flare/
+├── apps/
+│   └── user_repo/
+│       ├── current -> versions/1234567890/
+│       ├── versions/
+│       │   ├── 1234567890/  # Current deployment
+│       │   └── 1234567880/  # Previous (for rollback)
+│       ├── state.toml       # App state (PID, status)
+│       └── flare.toml       # App config
+└── auth.toml                # Optional: saved credentials
+```
+
+---
+
+## Security
+
+Flare uses **TLS** for all connections between CLI and daemon.
+
+### Local Network
+Auto-generates self-signed certificates. No configuration needed.
+
+### Production/Internet
+Set environment variables:
+
+```bash
+FLARE_TLS_CERT=/etc/letsencrypt/live/yourdomain/fullchain.pem
+FLARE_TLS_KEY=/etc/letsencrypt/live/yourdomain/privkey.pem
+```
+
+Or in `.env`:
+```bash
+FLARE_TLS_CERT=/path/to/cert.pem
+FLARE_TLS_KEY=/path/to/key.pem
+```
+
+Daemon automatically loads certificates on startup.
+
+---
+
+## Built-in Gateway
+
+Flare daemon includes an HTTP gateway on port 80 that:
+- Serves static sites by domain (`[web]` section)
+- Proxies to running apps (coming soon)
+- Handles virtual hosts automatically
+
+**Example:**
+```toml
+[web]
+domain = "mysite.local"
+root = "./public"
+```
+
+Access via `http://mysite.local` (add to `/etc/hosts` or use local DNS).
+
+---
+
+## Use Cases
+
+- **IoT Edge Deployments:** Deploy to Raspberry Pi fleet
+- **Homelab CI/CD:** Simple alternative to Jenkins/GitLab CI
+- **Prototype Hosting:** Quick deploys to VPS without containers
+- **Cyberdeck Development:** Build and deploy on the go
+- **Education:** Learn deployment without Kubernetes complexity
+
+---
+
+## Roadmap
+
+### ✅ Completed (v0.2)
+- [x] Basic deploy workflow
+- [x] Database auto-setup (PostgreSQL, MySQL, SQLite)
+- [x] Static site gateway (HTTP :80)
+- [x] Health checks (single check on deploy)
+- [x] Rollback system (version backup/restore)
+- [x] Start/Stop/Restart via daemon
+- [x] Auto-generated secure tokens (argon2)
+- [x] Dual authentication (git + daemon)
+- [x] UDP discovery
+- [x] Device management (sync, list, remove)
+- [x] TLS encryption (self-signed + custom certs)
+- [x] Deployment hooks (pre/post)
+- [x] Process isolation (systemd, chroot)
+
+### 🚧 In Progress (v0.3)
+- [ ] Gateway reverse proxy for APIs ([#3])
+- [ ] Fix start command for `[web]` only apps ([#1])
+- [ ] Auto-normalize app names with `/` ([#2])
+- [ ] Continuous health monitoring (not just on deploy)
+
+### 📋 Planned (v0.4)
+- [ ] Deploy to multiple devices (`--device all`)
+- [ ] Logs command (`flare logs myapp --follow`)
+- [ ] Auto health endpoint injection
+- [ ] Environment variable management UI
+
+### 🔮 Future (v1.0+)
+- [ ] Web dashboard
+- [ ] Metrics collection & visualization
+- [ ] Canary deployments
+- [ ] Blue-green deployment strategy
+- [ ] Multi-instance deployments (load balancing)
+- [ ] Plugin system
+- [ ] Windows daemon support
+- [ ] Container support (optional, for isolation)
+- [ ] Notifications (email, Telegram, webhooks)
+- [ ] Storage integration (S3, MinIO)
+- [ ] Resource limits enforcement
+- [ ] Auto-scaling
+- [ ] CLI autocomplete
+- [ ] Configuration validation (`flare check`)
+
+### 💡 Ideas Under Discussion
+- [ ] GitOps mode (watch repo for changes)
+- [ ] Secrets encryption at rest
+- [ ] Service mesh integration
+- [ ] ARM64 optimizations
+- [ ] Edge function runtime
+- [ ] Built-in monitoring agent
+
+---
+
+## Examples
+
+Check `examples/` directory for production-ready configs:
+
+- `nodejs-api.toml` - Express.js API
+- `python-flask.toml` - Flask application
+- `rust-actix.toml` - Actix web server
+- `static-site.toml` - React/Vue/Svelte build output
+- `fullstack.toml` - App with database and build steps
+
+---
+
+## Contributing
+
+Contributions welcome! Please:
+1. Fork the repo
+2. Create feature branch
+3. Test locally
+4. Submit PR
 
 ---
 
 ## License
 
-Apache-2.0 license © [VeloroLABS](https://github.com/Velooroo)
+Apache-2.0 © [VeloroLABS](https://github.com/Velooroo)

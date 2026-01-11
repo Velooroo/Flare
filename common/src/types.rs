@@ -1,11 +1,53 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SparkFile {
+pub struct DeployRequest {
+    pub msg_type: String,
+    pub repo: String,
+    pub forge: String,
+    pub auth_user: Option<String>,
+    pub auth_password: Option<String>,
+    pub daemon_token: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeployResponse {
+    pub success: bool,
+    pub message: String,
+    pub app_dir: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ManageRequest {
+    pub msg_type: String, // "manage"
+    pub app: String,
+    pub action: String, // "start", "stop", "restart"
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ManageResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AppState {
+    pub name: String,
+    pub version: String,
+    pub status: String,
+    pub pid: Option<u32>,
+    pub port: Option<u16>,
+    pub health_url: Option<String>,
+    pub isolation: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AppConfig {
     pub app: AppSection,
     pub build: Option<BuildSection>,
     pub run: Option<RunSection>,
-    pub env: Option<std::collections::HashMap<String, String>>,
+    pub env: Option<HashMap<String, String>>,
     pub web: Option<WebSection>,
     pub health: Option<HealthSection>,
     pub isolation: Option<IsolationSection>,
@@ -33,13 +75,13 @@ pub struct BuildSection {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RunSection {
     pub command: String,
-    pub port: u16,
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebSection {
-    pub domain: String,       // e.g. "mysite.local" or "mysite.com"
-    pub root: Option<String>, // folder with index.html (e.g. "dist" or ".")
+    pub domain: String,
+    pub root: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,12 +92,12 @@ pub struct HealthSection {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IsolationSection {
-    pub r#type: String, // systemd, chroot, none
+    pub r#type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StorageSection {
-    pub r#type: String, // s3, minio, local
+    pub r#type: String,
     pub bucket: Option<String>,
     pub endpoint: Option<String>,
     pub access_key: Option<String>,
@@ -67,7 +109,7 @@ pub struct StorageSection {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DatabaseSection {
-    pub r#type: String, // postgres, mysql, sqlite
+    pub r#type: String,
     pub name: Option<String>,
     pub user: Option<String>,
     pub password: Option<String>,
@@ -84,7 +126,7 @@ pub struct NotifySection {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SecretsSection {
     #[serde(flatten)]
-    pub secrets: std::collections::HashMap<String, String>,
+    pub secrets: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,7 +150,33 @@ pub struct MetricsSection {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StrategySection {
-    pub r#type: String, // canary, bluegreen, rolling
+    pub r#type: String,
     pub percent: Option<u8>,
     pub wait_time: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Device {
+    pub id: u32,
+    pub name: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct FlareConfig {
+    #[serde(default)]
+    pub devices: Vec<Device>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterTokenRequest {
+    pub msg_type: String,
+    pub token_hash: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterTokenResponse {
+    pub success: bool,
 }

@@ -1,5 +1,5 @@
 [package]
-name = "spark"
+name = "flare"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,3 +12,8 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
+tokio-rustls = "0.26.4"
+rustls = "0.23.36"
+webpki-roots = "1.0.5"
+rpassword = "7.4.0"
+serde_json = "1.0.149"
