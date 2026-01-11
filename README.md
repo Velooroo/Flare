@@ -46,8 +46,6 @@ flared
 # Listens on :7530 (TCP) and :7001 (UDP discovery)
 ```
 
-<img width="358" height="67" alt="Flare daemon starting" src="https://github.com/user-attachments/assets/dc4686fb-bd04-4f70-ac00-7de54a8ed4f9" />
-
 ### 3. Add Config to Your Project
 
 Create `flare.toml` in your repo root:
@@ -77,8 +75,6 @@ flare deploy user/my-project --github --token ghp_xxxxx
 # With custom forge
 flare deploy user/my-project --forge http://{ip}
 ```
-
-<img width="791" height="207" alt="Deployment output" src="https://github.com/user-attachments/assets/7ca91006-224f-433b-8c3c-027af7427903" />
 
 ```markdown
 ## Quick Start
