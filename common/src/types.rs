@@ -88,6 +88,7 @@ pub struct WebSection {
 pub struct HealthSection {
     pub url: String,
     pub timeout: Option<u64>,
+    pub auto_add: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

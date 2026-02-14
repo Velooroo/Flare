@@ -2,15 +2,19 @@ use anyhow::Result;
 use common::{AppConfig, AppState, DeployRequest};
 use common::{app_dir, load_app_config, save_state};
 use flate2::read::GzDecoder;
+use std::collections::HashMap;
+use std::env;
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::process::Command;
 use tar::Archive;
-use tracing::info;
+use tracing::{info, warn};
 
+use crate::env_loader::prepare_env;
+use crate::server::HealthPids;
 use crate::server::Routes;
 
-pub async fn run(req: &DeployRequest, routes: Routes) -> Result<PathBuf> {
+pub async fn run(req: &DeployRequest, routes: Routes, health_pids: HealthPids) -> Result<PathBuf> {
     let archive = download(req).await?;
     let dir = extract(&req.repo, &archive)?;
     let config = load_app_config(&dir)?;
@@ -27,19 +31,26 @@ pub async fn run(req: &DeployRequest, routes: Routes) -> Result<PathBuf> {
 
     let pid = start(&config, &dir, routes.clone()).await?;
 
+    // Register PID for health check
+    let app_name = &config.app.name;
+    crate::health_server::update_pid(&health_pids, app_name, pid);
+
     let state = AppState {
         name: config.app.name.clone(),
         version: config.app.version.clone(),
         status: "running".into(),
         pid,
         port: config.run.as_ref().and_then(|r| r.port),
-        health_url: config.health.as_ref().map(|h| h.url.clone()),
+        health_url: determine_health_url(&config.health, app_name),
         isolation: config.isolation.as_ref().map(|i| i.r#type.clone()),
     };
     save_state(&dir, &state)?;
 
-    if let Some(health) = &config.health {
-        spawn_health_check(&health.url, &config.app.name);
+    // Spawn health check only if url is set
+    if let Some(url) = &config.health {
+        if let Some(health_url) = determine_health_url(&config.health, app_name) {
+            spawn_health_check(&health_url, app_name);
+        }
     }
 
     crate::hooks::run_post(&config, &dir);
@@ -143,26 +154,38 @@ async fn start(config: &AppConfig, dir: &PathBuf, routes: Routes) -> Result<Opti
 }
 
 fn build_run_command(run: &common::RunSection, config: &AppConfig, dir: &PathBuf) -> Command {
+    let final_vars = prepare_env(dir, config.env.as_ref());
     let isolation = config.isolation.as_ref().map(|i| i.r#type.as_str());
 
-    match isolation {
+    let mut cmd = match isolation {
         Some("systemd") => {
-            let mut cmd = Command::new("systemd-run");
-            cmd.args(["--user", "--scope", "sh", "-c", &run.command])
-                .current_dir(dir);
-            cmd
+            let mut c = Command::new("systemd-run");
+            c.args(["--user", "--scope"]);
+
+            // env
+            for (k, v) in final_vars {
+                c.arg(format!("--setenv={}={}", k, v));
+            }
+
+            c.args(["sh", "-c", &run.command]);
+            c
         }
         Some("chroot") => {
-            let mut cmd = Command::new("chroot");
-            cmd.arg(dir).args(["sh", "-c", &run.command]);
-            cmd
+            let mut c = Command::new("chroot");
+            c.arg(dir).args(["sh", "-c", &run.command]);
+            c.envs(final_vars);
+            c
         }
         _ => {
-            let mut cmd = Command::new("sh");
-            cmd.args(["-c", &run.command]).current_dir(dir);
-            cmd
+            let mut c = Command::new("sh");
+            c.args(["-c", &run.command]);
+            c.envs(final_vars); // Применяем переменные
+            c
         }
-    }
+    };
+
+    cmd.current_dir(dir);
+    cmd
 }
 
 fn spawn_health_check(url: &str, name: &str) {
@@ -190,4 +213,15 @@ fn spawn_health_check(url: &str, name: &str) {
             }
         }
     });
+}
+
+fn determine_health_url(health: &Option<common::HealthSection>, app_name: &str) -> Option<String> {
+    // Option<&HealthSection> -> &HealthSection
+    let health = health.as_ref()?;
+
+    if health.auto_add {
+        Some(format!("http://localhost:7531/health/{}", app_name))
+    } else {
+        Some(health.url.clone())
+    }
 }

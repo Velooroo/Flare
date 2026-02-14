@@ -1,13 +1,14 @@
 use crate::{AppConfig, AppState, Device, FlareConfig};
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use rand::RngCore;
 use std::path::PathBuf;
 
 pub fn flare_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".flare")
+    // let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    home.join(".flare")
 }
 
 pub fn apps_dir() -> PathBuf {
@@ -18,20 +19,6 @@ pub fn apps_dir() -> PathBuf {
 
 pub fn app_dir(name: &str) -> PathBuf {
     apps_dir().join(name.replace("/", "_"))
-}
-
-pub fn is_local_network(host: &str) -> bool {
-    host == "localhost"
-        || host.starts_with("127.")
-        || host.starts_with("192.168.")
-        || host.starts_with("10.")
-        || (host.starts_with("172.") && {
-            host.split('.')
-                .nth(1)
-                .and_then(|s| s.parse::<u8>().ok())
-                .map(|n| (16..=31).contains(&n))
-                .unwrap_or(false)
-        })
 }
 
 pub fn save_state(dir: &PathBuf, state: &AppState) -> Result<()> {

@@ -2,6 +2,9 @@ use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // Protocol: [4 byte length][data]
+// Max saze for packege: 10 MB
+
+const MAX_MSG_SIZE: usize = 10 * 1024 * 1024;
 
 pub async fn send_msg<S>(stream: &mut S, data: &[u8]) -> Result<()>
 where
@@ -20,6 +23,10 @@ where
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
+
+    if len > MAX_MSG_SIZE {
+        anyhow::bail!("Message too large: {} bytes (max {})", len, MAX_MSG_SIZE);
+    }
 
     let mut buf = vec![0u8; len];
     stream.read_exact(&mut buf).await?;
