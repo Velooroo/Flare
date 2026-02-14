@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rustls::pki_types::{CertificateDer, ServerName};
+use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsConnector, client::TlsStream};
@@ -25,10 +26,18 @@ pub async fn connect(stream: TcpStream, host: &str) -> Result<TlsStream<TcpStrea
 }
 
 fn is_local(host: &str) -> bool {
-    host == "localhost"
-        || host.starts_with("127.")
-        || host.starts_with("192.168.")
-        || host.starts_with("10.")
+    if host == "localhost" {
+        return true;
+    }
+
+    if let Ok(addr) = host.parse::<IpAddr>() {
+        match addr {
+            IpAddr::V4(ipv4) => ipv4.is_loopback() || ipv4.is_private(),
+            IpAddr::V6(ipv6) => ipv6.is_loopback(),
+        }
+    } else {
+        false // it's domain name, not IP.
+    }
 }
 
 fn ca_bundle() -> rustls::RootCertStore {

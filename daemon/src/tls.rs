@@ -3,6 +3,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
+use tracing::info;
 
 pub async fn accept(stream: TcpStream) -> Result<TlsStream<TcpStream>> {
     let (cert, key) = load_or_generate()?;
@@ -25,7 +26,7 @@ fn load_or_generate() -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'st
             return Ok(result);
         }
     }
-
+    info!("Don't see TLS_CERT, start generate...");
     generate_cert()
 }
 

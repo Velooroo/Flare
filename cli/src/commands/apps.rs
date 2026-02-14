@@ -1,34 +1,38 @@
 use anyhow::Result;
-use common::{
-    ManageRequest, ManageResponse, app_dir, load_state, recv_json, save_state, send_json,
-};
-use std::process::Command;
+use common::{ManageRequest, ManageResponse, recv_json, send_json};
 use tokio::net::TcpStream;
 use tracing::info;
 
-pub async fn start(app: &str) -> Result<()> {
-    manage(app, "start").await
+pub async fn start(host: String, port: u16, app: String) -> Result<()> {
+    manage(host, port, app, "start".to_string()).await
 }
 
-pub async fn stop(app: &str) -> Result<()> {
-    manage(app, "stop").await
+pub async fn stop(host: String, port: u16, app: String) -> Result<()> {
+    manage(host, port, app, "stop".to_string()).await
 }
 
-pub async fn restart(app: &str) -> Result<()> {
-    manage(app, "restart").await
+pub async fn restart(host: String, port: u16, app: String) -> Result<()> {
+    manage(host, port, app, "restart".to_string()).await
 }
 
-async fn manage(app: &str, action: &str) -> Result<()> {
+pub async fn rollback(host: String, port: u16, app: String) -> Result<()> {
+    manage(host, port, app, "rollback".to_string()).await
+}
+
+async fn manage(host: String, port: u16, app: String, action: String) -> Result<()> {
+    let addr = format!("{}:{}", host, port);
+
     // TODO: In this moment it's have only on localhost.
-    let tcp = TcpStream::connect("127.0.0.1:7530").await?;
-    let mut socket = crate::tls::connect(tcp, "127.0.0.1").await?;
+    let tcp = TcpStream::connect(&addr).await?;
+
+    let mut socket = crate::tls::connect(tcp, &host).await?;
 
     let app_normalize = app.replace("/", "_");
 
     let req = ManageRequest {
         msg_type: "manage".into(),
-        app: app_normalize.to_string(),
-        action: action.to_string(),
+        app: app_normalize,
+        action: action,
     };
 
     send_json(&mut socket, &req).await?;
@@ -71,6 +75,6 @@ async fn manage(app: &str, action: &str) -> Result<()> {
 //     Ok(())
 // }
 
-pub async fn rollback(app: &str) -> Result<()> {
-    manage(app, "rollback").await
+pub async fn rollback(host: String, port: u16, app: String) -> Result<()> {
+    manage(host, port, app, "rollback".to_string()).await
 }

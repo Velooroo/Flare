@@ -69,6 +69,7 @@ pub async fn run_to_device(
     user: Option<String>,
 ) -> Result<()> {
     let device = common::get_device(device_id)?;
+    info!("{:?}", device);
     let auth = crate::commands::auth::load().unwrap_or_default();
 
     let tcp = TcpStream::connect(format!("{}:{}", device.host, device.port)).await?;

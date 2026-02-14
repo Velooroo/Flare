@@ -13,42 +13,7 @@ pub struct DiscoveredDevice {
 }
 
 pub async fn discover() -> Result<()> {
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-    socket.set_broadcast(true)?;
-
-    info!("Searching for devices...\n");
-
-    socket
-        .send_to(b"FLARE_DISCOVER", "255.255.255.255:7001")
-        .await?;
-
-    let mut found = Vec::new();
-    let mut buf = [0u8; 256];
-
-    let _ = tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            if let Ok((_, addr)) = socket.recv_from(&mut buf).await {
-                let device = DiscoveredDevice {
-                    host: addr.ip().to_string(),
-                    port: 7530,
-                };
-
-                // avoid duplicates
-                if !found
-                    .iter()
-                    .any(|d: &DiscoveredDevice| d.host == device.host)
-                {
-                    found.push(device);
-                }
-            }
-        }
-    })
-    .await;
-
-    if found.is_empty() {
-        println!("No devices found");
-        return Ok(());
-    }
+    let found = scan_network().await?;
 
     // load saved config
     let config = common::load_config()?;
@@ -74,43 +39,12 @@ pub async fn discover() -> Result<()> {
     Ok(())
 }
 
-pub async fn sync(range: &str) -> Result<()> {
+pub async fn sync(range: String) -> Result<()> {
     // re-run discovery to get fresh list
     println!("Re-discovering devices...\n");
+    let found = scan_network().await?; // Search devices
 
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-    socket.set_broadcast(true)?;
-    socket
-        .send_to(b"FLARE_DISCOVER", "255.255.255.255:7001")
-        .await?;
-
-    let mut found = Vec::new();
-    let mut buf = [0u8; 256];
-
-    let _ = tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            if let Ok((_, addr)) = socket.recv_from(&mut buf).await {
-                let device = DiscoveredDevice {
-                    host: addr.ip().to_string(),
-                    port: 7530,
-                };
-
-                if !found
-                    .iter()
-                    .any(|d: &DiscoveredDevice| d.host == device.host)
-                {
-                    found.push(device);
-                }
-            }
-        }
-    })
-    .await;
-
-    if found.is_empty() {
-        anyhow::bail!("No devices found. Run 'flare discover' first");
-    }
-
-    let indices = parse_range(range)?;
+    let indices = parse_range(&range)?;
     let mut config = common::load_config()?;
     let mut synced = 0;
 
@@ -121,6 +55,7 @@ pub async fn sync(range: &str) -> Result<()> {
 
         let token = common::generate_token();
         let token_hash = common::hash_token(&token)?;
+        info!("Generate token: {:?}", token_hash);
 
         // send hash to daemon
         let registered = register_token(&device.host, device.port, &token_hash).await?;
@@ -159,6 +94,45 @@ pub async fn sync(range: &str) -> Result<()> {
     println!("Synced {} devices", synced);
 
     Ok(())
+}
+
+pub async fn scan_network() -> Result<Vec<DiscoveredDevice>> {
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    socket.set_broadcast(true)?;
+    socket
+        .send_to(b"FLARE_DISCOVER", "255.255.255.255:7001")
+        .await?;
+
+    let mut found = Vec::new();
+    let mut buf = [0u8; 256];
+
+    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok((_, addr)) = socket.recv_from(&mut buf).await {
+                let device = DiscoveredDevice {
+                    host: addr.ip().to_string(),
+                    port: 7530,
+                };
+
+                if !found
+                    .iter()
+                    .any(|d: &DiscoveredDevice| d.host == device.host)
+                {
+                    found.push(device);
+                }
+            }
+        }
+    })
+    .await;
+
+    // if found.is_empty() {
+    //      println!("No devices found. Run 'flare discover' first");
+    //     Ok(found)
+    // } else {
+    //     Ok(found)
+    // }
+    Ok(found)
+    // Return Null or doesn't Vec -> found
 }
 
 fn parse_range(range: &str) -> Result<Vec<u32>> {

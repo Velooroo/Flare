@@ -110,12 +110,15 @@ async fn run(cli: Cli) -> Result<()> {
                 deploy::run(cli.host, cli.port, repo, github, forge, token, user).await
             }
         }
-        Cmd::Start { app } => apps::start(&app).await,
-        Cmd::Stop { app } => apps::stop(&app).await,
-        Cmd::Restart { app } => apps::restart(&app).await,
-        Cmd::Rollback { app } => apps::rollback(&app).await,
+
+        Cmd::Start { app } => apps::start(cli.host.clone(), cli.port, app).await,
+        Cmd::Stop { app } => apps::stop(cli.host.clone(), cli.port, app).await,
+        Cmd::Restart { app } => apps::restart(cli.host.clone(), cli.port, app).await,
+        Cmd::Rollback { app } => apps::rollback(cli.host.clone(), cli.port, app).await,
+
         Cmd::Discover => discovery::discover().await,
-        Cmd::Sync { range } => discovery::sync(&range).await,
+        Cmd::Sync { range } => discovery::sync(range).await,
+
         Cmd::Devices { action } => match action {
             None => devices::list(),
             Some(DeviceAction::Rm { id }) => devices::remove(&id),

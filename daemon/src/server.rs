@@ -45,17 +45,29 @@ fn save_tokens(store: &TokenStore) -> Result<()> {
     Ok(())
 }
 
+pub type HealthPids = Arc<RwLock<HashMap<String, Option<u32>>>>;
+
 pub async fn run(port: u16) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     info!("Listening on port {}", port);
 
     let routes: Routes = Arc::new(RwLock::new(GatewayState::default()));
+    let health_pids: HealthPids = Arc::new(RwLock::new(HashMap::new()));
 
     // start gateway
     let routes_clone = routes.clone();
+    let health_pids_clone = health_pids.clone();
+
     tokio::spawn(async move {
         if let Err(e) = crate::gateway::run(routes_clone).await {
             error!("Gateway error: {}", e);
+        }
+    });
+
+    // Start health server
+    tokio::spawn(async move {
+        if let Err(e) = crate::health_server::run(health_pids_clone).await {
+            error!("Health server error: {}", e);
         }
     });
 
@@ -79,15 +91,20 @@ pub async fn run(port: u16) -> Result<()> {
         };
 
         let routes = routes.clone();
+        let health_pids = health_pids.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle(socket, routes).await {
+            if let Err(e) = handle(socket, routes, health_pids).await {
                 error!("Handler error: {}", e);
             }
         });
     }
 }
 
-async fn handle(mut socket: TlsStream<TcpStream>, routes: Routes) -> Result<()> {
+async fn handle(
+    mut socket: TlsStream<TcpStream>,
+    routes: Routes,
+    health_pids: HealthPids,
+) -> Result<()> {
     let msg: serde_json::Value = common::recv_json(&mut socket).await?;
 
     tracing::info!(
@@ -104,7 +121,7 @@ async fn handle(mut socket: TlsStream<TcpStream>, routes: Routes) -> Result<()> 
         }
         "deploy" => {
             let req: DeployRequest = serde_json::from_value(msg)?;
-            handle_deploy(socket, routes, req).await
+            handle_deploy(socket, routes, health_pids, req).await
         }
         "manage" => {
             let req: ManageRequest = serde_json::from_value(msg)?;
@@ -125,7 +142,7 @@ async fn handle_manage(
         "start" => start_app(&req.app),
         "stop" => stop_app(&req.app),
         "restart" => restart_app(&req.app),
-        "rollback" => rollback_app(&req.app), // добавь
+        "rollback" => rollback_app(&req.app),
         _ => Err(anyhow::anyhow!("Unknown action")),
     };
 
@@ -213,8 +230,6 @@ fn rollback_app(app: &str) -> Result<String> {
         std::fs::remove_file(&current)?;
     }
 
-    std::os::unix::fs::symlink(latest.path(), &current)?;
-
     // restart if running
     let state = common::load_state(&dir)?;
     if let Some(s) = state {
@@ -246,6 +261,7 @@ async fn handle_register_token(
 async fn handle_deploy(
     mut socket: tokio_rustls::server::TlsStream<TcpStream>,
     routes: Routes,
+    health_pids: HealthPids,
     req: common::DeployRequest,
 ) -> Result<()> {
     // verify token
@@ -270,7 +286,7 @@ async fn handle_deploy(
 
     info!("Deploy: {}", req.repo);
 
-    let response = match crate::deploy::run(&req, routes).await {
+    let response = match crate::deploy::run(&req, routes, health_pids).await {
         Ok(dir) => common::DeployResponse {
             success: true,
             message: format!("Deployed to {}", dir.display()),
