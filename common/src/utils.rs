@@ -1,9 +1,10 @@
 use crate::{AppConfig, AppState, Device, FlareConfig};
-use anyhow::{Ok, Result};
+use anyhow::{Result};
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use rand::RngCore;
 use std::path::PathBuf;
+use std::result::Result::Ok;
 
 pub fn flare_dir() -> PathBuf {
     // let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());

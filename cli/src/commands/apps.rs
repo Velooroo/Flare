@@ -1,6 +1,7 @@
 use anyhow::Result;
 use common::{ManageRequest, ManageResponse, recv_json, send_json};
 use tokio::net::TcpStream;
+use tokio::time::{Duration, timeout};
 use tracing::info;
 
 pub async fn start(host: String, port: u16, app: String) -> Result<()> {
@@ -22,8 +23,11 @@ pub async fn rollback(host: String, port: u16, app: String) -> Result<()> {
 async fn manage(host: String, port: u16, app: String, action: String) -> Result<()> {
     let addr = format!("{}:{}", host, port);
 
-    // TODO: In this moment it's have only on localhost.
-    let tcp = TcpStream::connect(&addr).await?;
+    let tcp = timeout(
+        Duration::from_secs(5),
+        TcpStream::connect(format!("{}:{}", host, port)),
+    )
+    .await??;
 
     let mut socket = crate::tls::connect(tcp, &host).await?;
 
@@ -45,36 +49,4 @@ async fn manage(host: String, port: u16, app: String, action: String) -> Result<
     }
 
     Ok(())
-}
-
-// pub fn rollback(app: &str) -> Result<()> {
-//     // Rollback don't have full functionality
-//     // TODO: it will be necessary to transfer to the deployment part
-//     let dir = common::app_dir(app);
-//     let versions = dir.join("versions");
-
-//     let mut entries: Vec<_> = std::fs::read_dir(&versions)?
-//         .filter_map(|e| e.ok())
-//         .collect();
-
-//     entries.sort_by_key(|e| e.path());
-
-//     let latest = entries
-//         .last()
-//         .ok_or_else(|| anyhow::anyhow!("No backups found"))?;
-
-//     let current = dir.join("current");
-
-//     if current.exists() {
-//         std::fs::remove_file(&current)?;
-//     }
-
-//     std::os::unix::fs::symlink(latest.path(), &current)?;
-
-//     info!("Rolled back: {}", app);
-//     Ok(())
-// }
-
-pub async fn rollback(host: String, port: u16, app: String) -> Result<()> {
-    manage(host, port, app, "rollback".to_string()).await
 }
