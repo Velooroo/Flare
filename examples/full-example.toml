@@ -29,6 +29,6 @@ preseed = "./db/schema.sql"
 pre_deploy = "echo 'Starting deployment...'"
 post_deploy = "echo 'Deployment finished!'"
 
-# Notify
+# Notify (doesn't work now)
 [notify]
 on_success = ["mailto:admin@example.com"]

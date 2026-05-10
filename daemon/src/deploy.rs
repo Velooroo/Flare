@@ -1,15 +1,15 @@
 use anyhow::Result;
-use common::{AppConfig, AppState, DeployRequest};
-use common::{app_dir, load_app_config, save_state};
+use common::{AppState, DeployRequest};
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
-use std::env;
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::process::Command;
 use tar::Archive;
 use tracing::{info, warn};
 
+use crate::app_config;
+use crate::deploy_config::DeployInput;
 use crate::env_loader::prepare_env;
 use crate::server::HealthPids;
 use crate::server::Routes;
@@ -17,43 +17,45 @@ use crate::server::Routes;
 pub async fn run(req: &DeployRequest, routes: Routes, health_pids: HealthPids) -> Result<PathBuf> {
     let archive = download(req).await?;
     let dir = extract(&req.repo, &archive)?;
-    let config = load_app_config(&dir)?;
+    let config = app_config::load_config(&dir)?;
+    let input = DeployInput::from(&config);
 
-    crate::hooks::run_pre(&config, &dir);
+    if let Err(e) = crate::hooks::run_pre(input.hooks, &dir) {
+        warn!("Pre-deploy hook skipped: {}", e);
+    }
 
-    if let Some(build) = &config.build {
+    if let Some(build) = input.build {
         build_app(&build.command, &dir)?;
     }
 
-    if let Some(db) = &config.database {
+    if let Some(db) = input.database {
         crate::database::setup(db, &dir)?;
     }
 
-    let pid = start(&config, &dir, routes.clone()).await?;
+    let pid = start(&input, &dir, routes.clone()).await?;
 
-    // Register PID for health check
-    let app_name = &config.app.name;
-    crate::health_server::update_pid(&health_pids, app_name, pid);
+    crate::health_server::update_pid(&health_pids, input.name, pid);
 
     let state = AppState {
-        name: config.app.name.clone(),
-        version: config.app.version.clone(),
+        name: input.name.to_string(),
+        version: input.version.to_string(),
         status: "running".into(),
         pid,
-        port: config.run.as_ref().and_then(|r| r.port),
-        health_url: determine_health_url(&config.health, app_name),
-        isolation: config.isolation.as_ref().map(|i| i.r#type.clone()),
+        port: input.port,
+        health_url: determine_health_url(input.health, input.name),
+        isolation: input.isolation.map(|i| i.r#type.clone()),
     };
-    save_state(&dir, &state)?;
+    app_config::save_state(&dir, &state)?;
 
-    // Spawn health check only if url is set
-    if let Some(url) = &config.health {
-        if let Some(health_url) = determine_health_url(&config.health, app_name) {
-            spawn_health_check(&health_url, app_name);
+    if let Some(health) = input.health {
+        if let Some(health_url) = determine_health_url(Some(health), input.name) {
+            spawn_health_check(&health_url, input.name);
         }
     }
 
-    crate::hooks::run_post(&config, &dir);
+    if let Err(e) = crate::hooks::run_post(input.hooks, &dir) {
+        warn!("Post-deploy hook skipped: {}", e);
+    }
 
     Ok(dir)
 }
@@ -87,7 +89,7 @@ async fn download(req: &DeployRequest) -> Result<Vec<u8>> {
 }
 
 fn extract(repo: &str, data: &[u8]) -> Result<PathBuf> {
-    let dir = app_dir(repo);
+    let dir = app_config::app_dir(repo);
     std::fs::create_dir_all(&dir)?;
 
     backup_current(&dir)?;
@@ -128,8 +130,8 @@ fn build_app(cmd: &str, dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-async fn start(config: &AppConfig, dir: &PathBuf, routes: Routes) -> Result<Option<u32>> {
-    if let Some(web) = &config.web {
+async fn start(input: &DeployInput<'_>, dir: &PathBuf, routes: Routes) -> Result<Option<u32>> {
+    if let Some(web) = input.web {
         let root = dir.join(web.root.as_deref().unwrap_or("."));
         routes
             .write()
@@ -140,12 +142,12 @@ async fn start(config: &AppConfig, dir: &PathBuf, routes: Routes) -> Result<Opti
         return Ok(None);
     }
 
-    let run = match &config.run {
+    let run = match input.run {
         Some(r) => r,
         None => return Ok(None),
     };
 
-    let mut cmd = build_run_command(run, config, dir);
+    let mut cmd = build_run_command(run, input.env, input.isolation, dir);
     let child = cmd.spawn()?;
     let pid = child.id();
 
@@ -153,16 +155,20 @@ async fn start(config: &AppConfig, dir: &PathBuf, routes: Routes) -> Result<Opti
     Ok(Some(pid))
 }
 
-fn build_run_command(run: &common::RunSection, config: &AppConfig, dir: &PathBuf) -> Command {
-    let final_vars = prepare_env(dir, config.env.as_ref());
-    let isolation = config.isolation.as_ref().map(|i| i.r#type.as_str());
+pub fn build_run_command(
+    run: &common::RunSection,
+    env: Option<&HashMap<String, String>>,
+    isolation: Option<&common::IsolationSection>,
+    dir: &PathBuf,
+) -> Command {
+    let final_vars = prepare_env(dir, env);
+    let isolation_type = isolation.map(|i| i.r#type.as_str());
 
-    let mut cmd = match isolation {
+    let mut cmd = match isolation_type {
         Some("systemd") => {
             let mut c = Command::new("systemd-run");
             c.args(["--user", "--scope"]);
 
-            // env
             for (k, v) in final_vars {
                 c.arg(format!("--setenv={}={}", k, v));
             }
@@ -179,7 +185,7 @@ fn build_run_command(run: &common::RunSection, config: &AppConfig, dir: &PathBuf
         _ => {
             let mut c = Command::new("sh");
             c.args(["-c", &run.command]);
-            c.envs(final_vars); // Применяем переменные
+            c.envs(final_vars);
             c
         }
     };
@@ -215,9 +221,8 @@ fn spawn_health_check(url: &str, name: &str) {
     });
 }
 
-fn determine_health_url(health: &Option<common::HealthSection>, app_name: &str) -> Option<String> {
-    // Option<&HealthSection> -> &HealthSection
-    let health = health.as_ref()?;
+fn determine_health_url(health: Option<&common::HealthSection>, app_name: &str) -> Option<String> {
+    let health = health?;
 
     if health.auto_add {
         Some(format!("http://localhost:7531/health/{}", app_name))

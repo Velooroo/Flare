@@ -1,3 +1,9 @@
+/// Health-check HTTP server for deployed apps.
+///
+/// Runs on port 7531 and exposes GET /health/:app_name.
+/// Returns whether the app process is alive (kill -0) plus PID and timestamp.
+/// The gateway proxies /health requests here so external clients can
+/// monitor app health via a single endpoint.
 use anyhow::Result;
 use axum::{Router, extract::State, http::StatusCode, response::Json};
 use serde::Serialize;
