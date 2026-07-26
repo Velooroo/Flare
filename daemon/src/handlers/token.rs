@@ -2,21 +2,16 @@ use anyhow::Result;
 use common::{RegisterTokenRequest, RegisterTokenResponse, send_json};
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
-use tracing::info;
 
-use crate::token_store;
+use crate::auth::TokenStore;
 
-pub async fn handle_register_token(
-    mut socket: TlsStream<TcpStream>,
-    req: RegisterTokenRequest,
-) -> Result<()> {
-    let mut store = token_store::load_tokens();
-    store.tokens.push(req.token_hash);
-    token_store::save_tokens(&store)?;
-    info!("Registered new token");
+pub async fn handle(mut socket: TlsStream<TcpStream>, msg: serde_json::Value) -> Result<()> {
+    let req: RegisterTokenRequest = serde_json::from_value(msg)?;
+    let mut store = TokenStore::load();
+    store.register(req.token_hash)?;
 
-    let resp = RegisterTokenResponse { success: true };
-    send_json(&mut socket, &resp).await?;
-
-    Ok(())
+    send_json(&mut socket, &RegisterTokenResponse {
+        protocol_version: common::PROTOCOL_VERSION.to_string(),
+        success: true,
+    }).await
 }

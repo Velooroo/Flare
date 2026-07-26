@@ -22,10 +22,9 @@ pub async fn rollback(host: String, port: u16, app: String) -> Result<()> {
 
 async fn manage(host: String, port: u16, app: String, action: String) -> Result<()> {
     let addr = format!("{}:{}", host, port);
-
     let tcp = timeout(
         Duration::from_secs(5),
-        TcpStream::connect(format!("{}:{}", host, port)),
+        TcpStream::connect(addr),
     )
     .await??;
 
@@ -34,6 +33,7 @@ async fn manage(host: String, port: u16, app: String, action: String) -> Result<
     let app_normalize = app.replace("/", "_");
 
     let req = ManageRequest {
+        protocol_version: common::PROTOCOL_VERSION.to_string(),
         msg_type: "manage".into(),
         app: app_normalize,
         action: action,

@@ -2,15 +2,37 @@ use anyhow::Result;
 use common::DatabaseSection;
 use std::path::PathBuf;
 use std::process::Command;
-use tracing::info;
+use tracing::{info, warn};
 
 pub fn setup(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
-    match db.r#type.as_str() {
+    let db_type = db.r#type.as_str();
+    if db_type != "sqlite" && !docker_available() {
+        warn!(
+            "Docker is required for {} but was not found on this system. \
+             Install Docker or use sqlite instead.",
+            db_type
+        );
+        anyhow::bail!(
+            "Docker not available. Database type '{}' requires Docker. \
+             Use 'sqlite' for a Docker-free setup.",
+            db_type
+        );
+    }
+
+    match db_type {
         "postgres" => postgres(db, dir),
         "mysql" => mysql(db, dir),
         "sqlite" => sqlite(db, dir),
         t => anyhow::bail!("Unknown database: {}", t),
     }
+}
+
+fn docker_available() -> bool {
+    Command::new("docker")
+        .args(["version", "--format", "{{.Server.Version}}"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 fn postgres(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {

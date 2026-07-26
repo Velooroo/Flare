@@ -52,6 +52,7 @@ async fn deploy_to(
     let mut socket = crate::tls::connect(tcp, &host).await?;
 
     let req = DeployRequest {
+        protocol_version: common::PROTOCOL_VERSION.to_string(),
         msg_type: "deploy".into(),
         repo,
         forge: if github { "github".into() } else { forge },

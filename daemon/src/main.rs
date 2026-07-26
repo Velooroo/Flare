@@ -1,21 +1,16 @@
-mod app_config;
-mod database;
-mod deploy;
-mod deploy_config;
+mod app;
+mod auth;
 mod discovery;
-mod env_loader;
+mod dispatch;
 mod gateway;
 mod handlers;
-mod health_server;
-mod hooks;
+mod listen;
+mod pipeline;
 mod server;
 mod tls;
-mod token_store;
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = std::env::args().collect();
-
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();

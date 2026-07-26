@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub const PROTOCOL_VERSION: &str = "1";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeployRequest {
+    pub protocol_version: String,
     pub msg_type: String,
     pub repo: String,
     pub forge: String,
@@ -13,6 +16,7 @@ pub struct DeployRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeployResponse {
+    pub protocol_version: String,
     pub success: bool,
     pub message: String,
     pub app_dir: Option<String>,
@@ -20,13 +24,15 @@ pub struct DeployResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ManageRequest {
-    pub msg_type: String, // "manage"
+    pub protocol_version: String,
+    pub msg_type: String,
     pub app: String,
-    pub action: String, // "start", "stop", "restart"
+    pub action: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ManageResponse {
+    pub protocol_version: String,
     pub success: bool,
     pub message: String,
 }
@@ -173,11 +179,13 @@ pub struct FlareConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterTokenRequest {
+    pub protocol_version: String,
     pub msg_type: String,
     pub token_hash: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterTokenResponse {
+    pub protocol_version: String,
     pub success: bool,
 }

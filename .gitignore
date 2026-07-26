@@ -1,2 +1,5 @@
 /target
 .env
+.continue/
+.DS_Store
+test-app/

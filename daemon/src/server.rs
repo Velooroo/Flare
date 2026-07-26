@@ -1,105 +1,35 @@
 use anyhow::Result;
-use common::recv_json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tokio_rustls::server::TlsStream;
-use tracing::{error, info, warn};
+use tokio::task::JoinSet;
+use tracing::error;
 
-pub type Routes = Arc<RwLock<GatewayState>>;
-
-#[derive(Default)]
-pub struct GatewayState {
-    pub static_sites: HashMap<String, String>,
-    pub proxy_routes: HashMap<String, u16>,
-}
-
-pub type HealthPids = Arc<RwLock<HashMap<String, Option<u32>>>>;
+use crate::gateway;
+use crate::handlers::Router;
 
 pub async fn run(port: u16) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    info!("Listening on port {}", port);
+    let routes: gateway::Routes = Arc::new(RwLock::new(HashMap::new()));
+    let router = Arc::new(Router::new(routes.clone()));
 
-    let routes: Routes = Arc::new(RwLock::new(GatewayState::default()));
-    let health_pids: HealthPids = Arc::new(RwLock::new(HashMap::new()));
+    let mut joins = JoinSet::new();
 
-    // start gateway
-    let routes_clone = routes.clone();
-    let health_pids_clone = health_pids.clone();
-
-    tokio::spawn(async move {
-        if let Err(e) = crate::gateway::run(routes_clone).await {
-            error!("Gateway error: {}", e);
-        }
+    let gw_routes = routes.clone();
+    joins.spawn(async move {
+        gateway::run(gw_routes).await;
     });
 
-    // start health server
-    tokio::spawn(async move {
-        if let Err(e) = crate::health_server::run(health_pids_clone).await {
-            error!("Health server error: {}", e);
-        }
-    });
-
-    // start discovery
-    tokio::spawn(async move {
-        if let Err(e) = crate::discovery::run(7001).await {
+    joins.spawn(async move {
+        if let Err(e) = crate::discovery::run(7001, port).await {
             error!("Discovery error: {}", e);
         }
     });
 
-    loop {
-        let (tcp, addr) = listener.accept().await?;
-        info!("Connection from {}", addr);
+    let accept_result = crate::listen::accept_loop(listener, router).await;
 
-        let socket = match crate::tls::accept(tcp).await {
-            Ok(s) => s,
-            Err(e) => {
-                error!("TLS handshake failed: {}", e);
-                continue;
-            }
-        };
+    joins.shutdown().await;
 
-        let routes = routes.clone();
-        let health_pids = health_pids.clone();
-        tokio::spawn(async move {
-            if let Err(e) = handle(socket, routes, health_pids).await {
-                error!("Handler error: {}", e);
-            }
-        });
-    }
-}
-
-async fn handle(
-    mut socket: TlsStream<TcpStream>,
-    routes: Routes,
-    health_pids: HealthPids,
-) -> Result<()> {
-    let msg: serde_json::Value = recv_json(&mut socket).await?;
-
-    tracing::info!(
-        "Raw message: {}",
-        serde_json::to_string_pretty(&msg).unwrap()
-    );
-
-    let msg_type = msg.get("msg_type").and_then(|v| v.as_str()).unwrap_or("");
-
-    match msg_type {
-        "register_token" => {
-            let req: common::RegisterTokenRequest = serde_json::from_value(msg)?;
-            crate::handlers::token::handle_register_token(socket, req).await
-        }
-        "deploy" => {
-            let req: common::DeployRequest = serde_json::from_value(msg)?;
-            crate::handlers::deploy_handler::handle_deploy(socket, routes, health_pids, req).await
-        }
-        "manage" => {
-            let req: common::ManageRequest = serde_json::from_value(msg)?;
-            crate::handlers::manage::handle_manage(socket, req).await
-        }
-        _ => {
-            warn!("Unknown message type: {}", msg_type);
-            Ok(())
-        }
-    }
+    accept_result
 }

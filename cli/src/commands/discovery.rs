@@ -108,10 +108,16 @@ pub async fn scan_network() -> Result<Vec<DiscoveredDevice>> {
 
     let _ = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            if let Ok((_, addr)) = socket.recv_from(&mut buf).await {
+            if let Ok((len, addr)) = socket.recv_from(&mut buf).await {
+                let response = String::from_utf8_lossy(&buf[..len]);
+                let port = response
+                    .strip_prefix("FLARE_HERE:")
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(7530);
+
                 let device = DiscoveredDevice {
                     host: addr.ip().to_string(),
-                    port: 7530,
+                    port,
                 };
 
                 if !found
@@ -125,14 +131,7 @@ pub async fn scan_network() -> Result<Vec<DiscoveredDevice>> {
     })
     .await;
 
-    // if found.is_empty() {
-    //      println!("No devices found. Run 'flare discover' first");
-    //     Ok(found)
-    // } else {
-    //     Ok(found)
-    // }
     Ok(found)
-    // Return Null or doesn't Vec -> found
 }
 
 fn parse_range(range: &str) -> Result<Vec<u32>> {
@@ -162,6 +161,7 @@ async fn register_token(host: &str, port: u16, token_hash: &str) -> Result<bool>
     let mut socket = crate::tls::connect(tcp, host).await?;
 
     let req = RegisterTokenRequest {
+        protocol_version: common::PROTOCOL_VERSION.to_string(),
         msg_type: "register_token".into(),
         token_hash: token_hash.to_string(),
     };

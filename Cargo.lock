@@ -386,27 +386,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
- "axum",
- "chrono",
  "dirs",
- "flate2",
  "hex",
  "rand",
- "rcgen 0.12.1",
- "reqwest",
- "rustls 0.23.36",
- "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
- "tar",
  "tokio",
- "tokio-rustls 0.26.4",
  "toml",
- "tower 0.4.13",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -602,7 +588,8 @@ dependencies = [
  "chrono",
  "common",
  "flate2",
- "rcgen 0.14.6",
+ "libc",
+ "rcgen",
  "reqwest",
  "rustls 0.23.36",
  "rustls-pemfile 2.2.0",
@@ -611,6 +598,7 @@ dependencies = [
  "tar",
  "tokio",
  "tokio-rustls 0.26.4",
+ "tokio-util",
  "toml",
  "tower 0.4.13",
  "tower-http",
@@ -1400,18 +1388,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.16",
-]
-
-[[package]]
-name = "rcgen"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48406db8ac1f3cbc7dcdb56ec355343817958a356ff430259bb07baf7607e1e1"
-dependencies = [
- "pem",
- "ring",
- "time",
- "yasna",
 ]
 
 [[package]]
@@ -2336,15 +2312,6 @@ name = "webpki-roots"
 version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
-
-[[package]]
-name = "webpki-roots"
-version = "0.26.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
-dependencies = [
- "webpki-roots 1.0.5",
-]
 
 [[package]]
 name = "webpki-roots"

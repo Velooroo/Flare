@@ -4,25 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.49.0", features = ["net", "io-util"] }
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
-flate2 = "1"
-tar = "0.4"
+tokio = { version = "1.49.0", features = ["net", "io-util", "macros", "rt"] }
 serde_json = "1"
 anyhow = "1.0"
-rustls = "0.23.36"
-tokio-rustls = "0.26.4"
-rustls-pemfile = "2.2.0"
-rcgen = "0.12"
-webpki-roots = "0.26"
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }
-axum = "0.7"
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["fs", "trace"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-chrono = { version = "0.4", features = ["serde"] }
 argon2 = { version = "0.5", features = ["std"] }
 rand = "0.8"
 hex = "0.4"

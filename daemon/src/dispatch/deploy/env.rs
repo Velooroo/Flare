@@ -7,11 +7,8 @@ pub fn prepare_env(
     dir: &Path,
     config_env: Option<&HashMap<String, String>>,
 ) -> HashMap<String, String> {
-    // 1. Load .env
     let dot_env = load_dot_env_file(dir);
-    // 2. Take config
     let conf_env = config_env.cloned().unwrap_or_default();
-    // 3. Merge
     resolve_vars(&conf_env, &dot_env)
 }
 
@@ -40,12 +37,10 @@ fn resolve_vars(
 ) -> HashMap<String, String> {
     let mut final_env = HashMap::new();
 
-    // Now we take all from .env (like DB)
     for (k, v) in dot_env {
         final_env.insert(k.clone(), v.clone());
     }
 
-    // Then merge flare.toml with resolve
     for (k, v) in conf {
         if v.starts_with("$ENV:") {
             let var_name = &v[5..];
@@ -56,9 +51,9 @@ fn resolve_vars(
             };
             final_env.insert(k.clone(), val);
         } else {
-            // Rewrite, if key have (flare.toml have more priority)
             final_env.insert(k.clone(), v.clone());
         }
     }
+
     final_env
 }
