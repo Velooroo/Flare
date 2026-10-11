@@ -1,4 +1,8 @@
-use common::{app_dir, generate_token, hash_token, next_device_id, verify_token, Device, FlareConfig};
+//! Unit tests for the `common::utils` helpers (tokens, device ids, app paths).
+
+use common::{
+    Device, FlareConfig, app_dir, generate_token, hash_token, next_device_id, verify_token,
+};
 
 #[test]
 fn test_generate_token_length() {

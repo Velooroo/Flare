@@ -16,6 +16,7 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"
 flate2 = "1"
 tar = "0.4"
 axum = "0.7"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs"] }
 serde_json = "1"
@@ -24,4 +25,13 @@ rcgen = "0.14.6"
 rustls = "0.23.36"
 tokio-rustls = "0.26.4"
 tokio-util = "0.7"
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_System_Threading", 
+    "Win32_Foundation", 
+    "Win32_System_WindowsProgramming"
+] }

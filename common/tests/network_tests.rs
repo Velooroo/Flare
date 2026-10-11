@@ -1,3 +1,6 @@
+//! Unit tests for the framing protocol in `common::network`.
+//! INFO: Uses in-memory `duplex` streams, so no sockets or TLS are involved.
+
 use common::{recv_json, recv_msg, send_json, send_msg};
 use tokio::io::duplex;
 

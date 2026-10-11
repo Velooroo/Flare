@@ -6,6 +6,10 @@ members = [
     "common"
 ]
 
+# WARN: `panic = "abort"` makes the release binaries smaller and a touch faster,
+#       but any panic (e.g. the gateway's bind().unwrap(), or a nested Tokio
+#       runtime) terminates the whole daemon immediately, with no chance to
+#       recover or log a clean shutdown.
 [profile.release]
 opt-level = "z"
 lto = "fat"

@@ -1,3 +1,11 @@
+//! Daemon-side token store: a list of argon2 hashes of accepted CLI tokens.
+//!
+//! INFO: `flare sync` generates a random token, hashes it, and sends only the
+//!       hash here. The plain token never leaves the CLI.
+//! WARN: Hashes are only ever appended — there is no revoke/expire path.
+//! WARN: `load` silently falls back to an empty store if the file is corrupt,
+//!       which would lock every CLI out without any visible error.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -23,6 +31,8 @@ impl TokenStore {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&path, toml::to_string(self)?)?;
+        // INFO: Harden permissions (the file holds token hashes).
+        common::restrict_permissions(&path);
         Ok(())
     }
 
@@ -33,6 +43,7 @@ impl TokenStore {
         Ok(())
     }
 
+    // INFO: True if the token matches any stored argon2 hash.
     pub fn verify(&self, token: &str) -> bool {
         self.tokens
             .iter()

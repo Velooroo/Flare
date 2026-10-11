@@ -1,4 +1,17 @@
-use axum::{Router, body::Body, extract::{Host, State}, http::{Request, StatusCode}, response::{IntoResponse, Response}};
+//! Gateway proxy integration test.
+//!
+//! WARN: This file re-implements the gateway handler instead of importing it,
+//!       because `flared` is a binary crate and exposes no library target. As a
+//!       result it tests this copy, not `daemon::gateway` — the two can drift.
+//! TODO: Add a `lib.rs` (or a small `gateway` library crate) and test the real code.
+
+use axum::{
+    Router,
+    body::Body,
+    extract::{Host, State},
+    http::{Request, StatusCode},
+    response::{IntoResponse, Response},
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -7,8 +20,13 @@ use tokio::sync::RwLock;
 #[derive(Debug, Clone)]
 enum Route {
     #[allow(dead_code)]
-    Static { root: String },
-    App { port: u16, pid: Option<u32> },
+    Static {
+        root: String,
+    },
+    App {
+        port: u16,
+        pid: Option<u32>,
+    },
 }
 
 type Routes = Arc<RwLock<HashMap<String, Route>>>;
@@ -20,21 +38,23 @@ fn make_app(routes: Routes) -> Router {
         .with_state(routes)
 }
 
-async fn handler(
-    State(routes): State<Routes>,
-    Host(host): Host,
-    req: Request<Body>,
-) -> Response {
+async fn handler(State(routes): State<Routes>, Host(host): Host, req: Request<Body>) -> Response {
     let host = host.split(':').next().unwrap_or(&host).to_string();
     let guard = routes.read().await;
     let route = guard.get(&host).or_else(|| guard.get("*"));
 
     match route {
         Some(Route::App { port, .. }) => {
-            let path = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+            let path = req
+                .uri()
+                .path_and_query()
+                .map(|p| p.as_str())
+                .unwrap_or("/");
             let url = format!("http://127.0.0.1:{}{}", port, path);
             let method = req.method().clone();
-            let body_bytes = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await.unwrap();
+            let body_bytes = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024)
+                .await
+                .unwrap();
 
             let reqwest_method = match method.as_str() {
                 "GET" => reqwest::Method::GET,
@@ -47,7 +67,9 @@ async fn handler(
             let rb = if body_bytes.is_empty() {
                 reqwest::Client::new().request(reqwest_method, &url)
             } else {
-                reqwest::Client::new().request(reqwest_method, &url).body(body_bytes.to_vec())
+                reqwest::Client::new()
+                    .request(reqwest_method, &url)
+                    .body(body_bytes.to_vec())
             };
 
             match rb.send().await {
@@ -56,7 +78,11 @@ async fn handler(
                     let body = r.bytes().await.unwrap_or_default();
                     (code, Body::from(body)).into_response()
                 }
-                Err(e) => (StatusCode::SERVICE_UNAVAILABLE, format!("backend down: {}", e)).into_response()
+                Err(e) => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("backend down: {}", e),
+                )
+                    .into_response(),
             }
         }
         _ => (StatusCode::NOT_FOUND, "no route").into_response(),
@@ -76,10 +102,13 @@ async fn test_proxy_routes_to_backend() {
 
     // start gateway with route pointing to backend
     let routes: Routes = Arc::new(RwLock::new(HashMap::new()));
-    routes.write().await.insert("test.local".into(), Route::App {
-        port: backend_addr.port(),
-        pid: None,
-    });
+    routes.write().await.insert(
+        "test.local".into(),
+        Route::App {
+            port: backend_addr.port(),
+            pid: None,
+        },
+    );
 
     let gw = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gw_addr = gw.local_addr().unwrap();
@@ -93,28 +122,48 @@ async fn test_proxy_routes_to_backend() {
     let client = reqwest::Client::new();
 
     // health endpoint
-    let resp = client.get(format!("http://{}:{}/.flare/health", gw_addr.ip(), gw_addr.port()))
-        .send().await.unwrap();
+    let resp = client
+        .get(format!(
+            "http://{}:{}/.flare/health",
+            gw_addr.ip(),
+            gw_addr.port()
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     assert_eq!(resp.text().await.unwrap(), "ok");
 
     // proxy to backend root
-    let resp = client.get(format!("http://{}:{}/", gw_addr.ip(), gw_addr.port()))
+    let resp = client
+        .get(format!("http://{}:{}/", gw_addr.ip(), gw_addr.port()))
         .header("Host", "test.local")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     assert_eq!(resp.text().await.unwrap(), "root");
 
     // proxy to backend /api/test
-    let resp = client.get(format!("http://{}:{}/api/test", gw_addr.ip(), gw_addr.port()))
+    let resp = client
+        .get(format!(
+            "http://{}:{}/api/test",
+            gw_addr.ip(),
+            gw_addr.port()
+        ))
         .header("Host", "test.local")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     assert_eq!(resp.text().await.unwrap(), "api-ok");
 
     // wrong host = no route
-    let resp = client.get(format!("http://{}:{}/", gw_addr.ip(), gw_addr.port()))
+    let resp = client
+        .get(format!("http://{}:{}/", gw_addr.ip(), gw_addr.port()))
         .header("Host", "unknown.local")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 404);
 }

@@ -1,3 +1,8 @@
+//! `flare auth` — store the git credentials used when the daemon downloads a repo.
+//!
+//! WARN: The password/token is written in plain text to `~/.flare/auth.toml`.
+//!       On a shared machine, protect that file with `chmod 600`.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
@@ -13,6 +18,7 @@ fn auth_path() -> std::path::PathBuf {
     common::flare_dir().join("auth.toml")
 }
 
+// INFO: Interactive prompts. Password input is hidden via `rpassword`.
 pub fn login() -> Result<()> {
     println!("Flare Authentication");
     println!("---");
@@ -50,11 +56,14 @@ pub fn login() -> Result<()> {
     let path = auth_path();
     std::fs::create_dir_all(path.parent().unwrap())?;
     std::fs::write(&path, toml::to_string_pretty(&auth)?)?;
+    // INFO: auth.toml holds a plaintext token/password; keep it owner-only.
+    common::restrict_permissions(&path);
 
     println!("\n✓ Credentials saved to {:?}", path);
     Ok(())
 }
 
+// INFO: Removes the stored credentials file.
 pub fn logout() -> Result<()> {
     let path = auth_path();
 
@@ -68,6 +77,7 @@ pub fn logout() -> Result<()> {
     Ok(())
 }
 
+// INFO: Prints a summary without ever showing the token itself.
 pub fn status() -> Result<()> {
     let path = auth_path();
 
@@ -97,6 +107,7 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
+// INFO: Used by `deploy` to fill in credentials the user did not pass as flags.
 pub fn load() -> Result<AuthConfig> {
     let path = auth_path();
 

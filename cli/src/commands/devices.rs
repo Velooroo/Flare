@@ -1,6 +1,9 @@
+//! `flare devices` — list and remove locally saved devices.
+
 use anyhow::Result;
 use common::load_config;
 
+// INFO: `flare devices` with no sub-command lists the saved devices.
 pub fn list() -> Result<()> {
     let config = load_config()?;
 
@@ -18,6 +21,10 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
+// INFO: Accepts either a numeric id or a saved name.
+//
+// WARN: This only forgets the device locally; the token hash stays on the daemon
+//       forever. There is no revoke endpoint yet.
 pub fn remove(id: &str) -> Result<()> {
     let mut config = common::load_config()?;
 

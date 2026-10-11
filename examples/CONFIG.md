@@ -298,7 +298,6 @@ preseed = "./schema.sql"
 | Type | Template |
 |------|----------|
 | Node.js API  | `examples/nodejs-api.toml` |
-| Python Flask | `examples/python-flask.toml` |
-| Rust Service | `examples/rust-service.toml` |
-| Static Site  | `examples/static-site.toml` |
-| Full Stack   | `examples/fullstack.toml` |
+| Python API   | `examples/python-api.toml` |
+| Static Site  | `examples/website.toml` |
+| Full Stack   | `examples/full-example.toml` |

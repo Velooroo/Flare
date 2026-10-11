@@ -1,3 +1,9 @@
+//! TLS setup for the daemon control port.
+//!
+//! INFO: If $FLARE_TLS_CERT and $FLARE_TLS_KEY are set, they are loaded; otherwise
+//!       a self-signed localhost certificate is generated.
+//! INFO: The acceptor is built once at startup and reused for every connection.
+
 use anyhow::Result;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::sync::Arc;
@@ -5,14 +11,18 @@ use tokio::net::TcpStream;
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
 use tracing::info;
 
-pub async fn accept(stream: TcpStream) -> Result<TlsStream<TcpStream>> {
+/// Builds the TLS acceptor once. Call this during startup, not per connection.
+pub fn build_acceptor() -> Result<TlsAcceptor> {
     let (cert, key) = load_or_generate()?;
 
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert, key)?;
 
-    let acceptor = TlsAcceptor::from(Arc::new(config));
+    Ok(TlsAcceptor::from(Arc::new(config)))
+}
+
+pub async fn accept(acceptor: &TlsAcceptor, stream: TcpStream) -> Result<TlsStream<TcpStream>> {
     Ok(acceptor.accept(stream).await?)
 }
 
@@ -22,11 +32,13 @@ fn load_or_generate() -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'st
         std::env::var("FLARE_TLS_CERT"),
         std::env::var("FLARE_TLS_KEY"),
     ) {
-        if let Ok(result) = load_files(&cert, &key) {
-            return Ok(result);
+        match load_files(&cert, &key) {
+            Ok(result) => return Ok(result),
+            // WARN: A bad path is only warned about; we fall back to self-signed.
+            Err(e) => info!("Failed to load TLS_CERT/KEY ({}); using self-signed", e),
         }
     }
-    info!("Don't see TLS_CERT, start generate...");
+    info!("No TLS_CERT configured; generating a self-signed certificate");
     generate_cert()
 }
 
@@ -45,7 +57,10 @@ fn load_files(
     Ok((certs, key))
 }
 
-// generates localhost cert valid for 30 days
+// INFO: Self-signed cert for the name `localhost`.
+// WARN: Not persisted to disk, so it changes on every restart. Because the only
+//       SAN is `localhost`, a verifying TLS client cannot match the device's
+//       IP/hostname — which is why the CLI skips verification on the LAN.
 fn generate_cert() -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
 

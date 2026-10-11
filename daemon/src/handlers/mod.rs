@@ -1,3 +1,8 @@
+//! Request router for the control port.
+//!
+//! A single JSON `Value` is parsed just enough to read `msg_type` and
+//! `protocol_version`, then dispatched to the matching handler.
+
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,23 +17,39 @@ pub mod health;
 pub mod manage;
 pub mod token;
 
+// INFO: Shared map of app name -> last known pid, used by the health handler.
 pub type HealthStore = Arc<RwLock<HashMap<String, Option<u32>>>>;
 
 pub struct Context {
     pub routes: Routes,
     pub health_pids: HealthStore,
+    /// One-time code required for the very first token enrollment, if the daemon
+    /// started with no tokens.
+    pub pairing_code: Option<String>,
 }
 
 pub struct Router {
     pub routes: Routes,
     health_pids: HealthStore,
+    pairing_code: Option<String>,
 }
 
 impl Router {
     pub fn new(routes: Routes) -> Self {
+        // INFO: Only mint a pairing code when nobody is paired yet. Once a token
+        //       exists, enrollment requires that token instead.
+        let pairing_code = if crate::auth::TokenStore::load().tokens.is_empty() {
+            let code = common::generate_token()[..6].to_uppercase();
+            tracing::info!("First-time pairing code: {}", code);
+            Some(code)
+        } else {
+            None
+        };
+
         Self {
             routes,
             health_pids: Arc::new(RwLock::new(HashMap::new())),
+            pairing_code,
         }
     }
 
@@ -36,6 +57,7 @@ impl Router {
         Context {
             routes: self.routes.clone(),
             health_pids: self.health_pids.clone(),
+            pairing_code: self.pairing_code.clone(),
         }
     }
 
@@ -46,6 +68,7 @@ impl Router {
     ) -> Result<()> {
         let msg_type = msg.get("msg_type").and_then(|v| v.as_str()).unwrap_or("");
 
+        // INFO: Refuse peers speaking a different protocol version.
         let version = msg
             .get("protocol_version")
             .and_then(|v| v.as_str())
@@ -60,12 +83,16 @@ impl Router {
             return Ok(());
         }
 
+        // INFO: `deploy` and `manage` verify the daemon token. `health` verifies
+        //       it too. `register_token` is the trust-on-first-use bootstrap.
         match msg_type {
-            "register_token" => token::handle(socket, msg).await,
+            "register_token" => token::handle(socket, msg, self.context()).await,
             "deploy" => deploy::handle(socket, msg, self.context()).await,
-            "manage" => manage::handle(socket, msg).await,
-            "health" => health::handle(socket, msg, self.health_pids.clone()).await,
+            "manage" => manage::handle(socket, msg, self.context()).await,
+            "health" => health::handle(socket, msg, self.context()).await,
             _ => {
+                // WARN: Unknown message types get no reply, so the client blocks
+                //       until its own timeout. Sending an error would be friendlier.
                 tracing::warn!("Unknown message type: {}", msg_type);
                 Ok(())
             }

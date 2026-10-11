@@ -1,3 +1,5 @@
+//! `deploy` handler — authenticate, run the pipeline, then update the gateway.
+
 use anyhow::Result;
 use common::{DeployRequest, DeployResponse, send_json};
 use tokio::net::TcpStream;
@@ -16,15 +18,21 @@ pub async fn handle(
 ) -> Result<()> {
     let req: DeployRequest = serde_json::from_value(msg)?;
 
+    // INFO: This is the only handler that enforces authentication.
+    // WARN: TokenStore is re-read from disk on every request (no cache).
     let store = TokenStore::load();
     let token = req.daemon_token.as_deref().unwrap_or("");
     if !store.verify(token) {
-        send_json(&mut socket, &DeployResponse {
-            protocol_version: common::PROTOCOL_VERSION.to_string(),
-            success: false,
-            message: "Invalid token".into(),
-            app_dir: None,
-        }).await?;
+        send_json(
+            &mut socket,
+            &DeployResponse {
+                protocol_version: common::PROTOCOL_VERSION.to_string(),
+                success: false,
+                message: "Invalid token".into(),
+                app_dir: None,
+            },
+        )
+        .await?;
         return Ok(());
     }
 
@@ -32,12 +40,29 @@ pub async fn handle(
 
     let outcome = pipeline::run(&req).await;
 
+    // INFO: On success, publish the new route to the shared gateway table.
+    //       Static sites are keyed by domain; apps are keyed by app name.
     match &outcome {
-        pipeline::Outcome::Ok { static_site, name, pid, port, .. } => {
+        pipeline::Outcome::Ok {
+            static_site,
+            name,
+            pid,
+            port,
+            ..
+        } => {
             if let Some((domain, root)) = static_site {
-                ctx.routes.write().await.insert(domain.clone(), Route::Static { root: root.clone() });
+                ctx.routes
+                    .write()
+                    .await
+                    .insert(domain.clone(), Route::Static { root: root.clone() });
             } else if let Some(p) = port {
-                ctx.routes.write().await.insert(name.clone(), Route::App { port: *p, pid: *pid });
+                ctx.routes.write().await.insert(
+                    name.clone(),
+                    Route::App {
+                        port: *p,
+                        pid: *pid,
+                    },
+                );
             }
             ctx.health_pids.write().await.insert(name.clone(), *pid);
         }
