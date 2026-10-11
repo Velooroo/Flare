@@ -20,9 +20,9 @@ pub fn setup(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
     }
 
     match db_type {
-        "postgres" => postgres(db, dir),
-        "mysql" => mysql(db, dir),
-        "sqlite" => sqlite(db, dir),
+        "postgres" => setup_postgres(db, dir),
+        "mysql" => setup_mysql(db, dir),
+        "sqlite" => setup_sqlite(db, dir),
         t => anyhow::bail!("Unknown database: {}", t),
     }
 }
@@ -35,7 +35,7 @@ fn docker_available() -> bool {
         .unwrap_or(false)
 }
 
-fn postgres(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
+fn setup_postgres(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
     let name = db.name.as_deref().unwrap_or("postgres");
     let user = db.user.as_deref().unwrap_or("postgres");
     let pass = db.password.as_deref().unwrap_or("password");
@@ -83,7 +83,7 @@ fn postgres(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn mysql(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
+fn setup_mysql(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
     let name = db.name.as_deref().unwrap_or("mysql");
     let user = db.user.as_deref().unwrap_or("root");
     let pass = db.password.as_deref().unwrap_or("password");
@@ -128,7 +128,7 @@ fn mysql(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn sqlite(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
+fn setup_sqlite(db: &DatabaseSection, dir: &PathBuf) -> Result<()> {
     let name = db.name.as_deref().unwrap_or("app.db");
     let path = dir.join(name);
 

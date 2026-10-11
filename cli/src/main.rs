@@ -11,7 +11,7 @@ struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
 
-    #[arg(long, default_value = "127.0.0.1", global = true)]
+    #[arg(long, default_value = "localhost", global = true)]
     host: String,
 
     #[arg(long, default_value_t = 7530, global = true)]
@@ -85,6 +85,7 @@ async fn main() {
     }
 }
 
+// INFO: Switcher for running commands on cli 
 async fn run(cli: Cli) -> Result<()> {
     use commands::*;
 

@@ -7,14 +7,18 @@ use tracing::info;
 pub struct AppManager;
 
 impl AppManager {
+
+    // Return path for dir application
     pub fn app_dir(name: &str) -> PathBuf {
         common::app_dir(name)
     }
 
+    // Check if process is alive (Return: True)
     pub fn process_alive(pid: u32) -> bool {
         unsafe { libc::kill(pid as i32, 0) == 0 }
     }
 
+    // Function about started deploy in daemon
     pub fn start(app: &str) -> Result<String> {
         let dir = Self::app_dir(app);
         let mut state = Self::load_state_or_fail(&dir)?;
@@ -71,6 +75,7 @@ impl AppManager {
         Self::start(app)
     }
 
+    // TODO: Not work now, need check and fix it (I don't do all on this function)
     pub fn rollback(app: &str) -> Result<String> {
         let dir = Self::app_dir(app);
         let versions_dir = dir.join("versions");
