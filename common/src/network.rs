@@ -1,9 +1,12 @@
+//! Length-prefixed framing used on every TCP/TLS connection.
+//!
+//! Wire format: `[4-byte big-endian length][payload]`, payload is usually JSON.
+
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-// Protocol: [4 byte length][data]
-// Max saze for packege: 10 MB
-
+// INFO: Hard cap per message. 10 MB is plenty for control messages; note that
+//       actual source archives are downloaded by the daemon, not through this path.
 const MAX_MSG_SIZE: usize = 10 * 1024 * 1024;
 
 pub async fn send_msg<S>(stream: &mut S, data: &[u8]) -> Result<()>
@@ -24,6 +27,8 @@ where
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
 
+    // INFO: Reject oversized frames before allocating, so a bad peer cannot ask
+    //       us for an arbitrarily large buffer.
     if len > MAX_MSG_SIZE {
         anyhow::bail!("Message too large: {} bytes (max {})", len, MAX_MSG_SIZE);
     }

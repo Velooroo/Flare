@@ -7,7 +7,9 @@
 
 Flare replaces complex CI/CD pipelines with a single-binary toolchain built for IoT, Raspberry Pi, and local servers.
 
-> **No dependencies.** No Python, Node.js, or Docker required on target devices.
+> **No runtime dependencies.** No Python, Node.js, or Docker required to run the
+> toolchain itself (Docker is only needed if you ask Flare to provision
+> PostgreSQL/MySQL containers).
 
 ![Demo](assets/demo.gif)
 
@@ -17,13 +19,14 @@ Flare replaces complex CI/CD pipelines with a single-binary toolchain built for 
 
 - **Push-to-Deploy:** Ship from laptop to device in seconds
 - **Auto-Discovery:** Finds devices via UDP broadcast
-- **Built-in Gateway:** Reverse proxy for static sites and apps
-- **Secure:** TLS encryption by default
-- **Works Everywhere:** GitHub, GitLab, Forge, or any other git.
+- **Built-in Gateway:** Static sites + reverse proxy for apps (HTTP or HTTPS)
+- **Secure:** TLS by default; device tokens required for deploy **and** management
+- **Works Everywhere:** GitHub, Gitea/Forgejo, or any other git — pick the branch
 - **Database Support:** Auto-setup PostgreSQL, MySQL, or SQLite
-- **Rollback:** Built-in versioning and rollback system
+- **Rollback:** Versioned deploys with one-command rollback (keeps the last 4)
 - **Hooks:** Run custom scripts before/after deployment
-- **Isolation:** SystemD or chroot process isolation
+- **Isolation:** Process groups, systemd units, or chroot
+- **Windows & Unix:** Daemon builds and runs on Linux, macOS and Windows
 
 ---
 
@@ -69,83 +72,14 @@ flare deploy user/my-project
 # Or specify host
 flare deploy user/my-project --host 192.168.1.100
 
-# With GitHub
+# Deploy a specific branch (default: main)
+flare deploy user/my-project --branch develop
+
+# With GitHub token
 flare deploy user/my-project --github --token ghp_xxxxx
 
-# With custom forge
-flare deploy user/my-project --forge http://{ip}
-```
-
-```markdown
-## Quick Start
-
-### 1. Install
-
-Download from [Releases](https://github.com/Velooroo/flare/releases) or build:
-
-```bash
-cargo build --release
-```
-
-### 2. Start Daemon (on target device)
-
-```bash
-flared
-# Listens on :7530 (TCP) and :7001 (UDP discovery)
-```
-
-### 3. Setup Authentication
-
-**Git credentials** (for downloading repos):
-```bash
-flare login
-Username: your-username
-Password: your-git-(token or password)
-```
-
-**Device registration** (auto-generates secure token):
-```bash
-flare discover
-# [0] 192.168.1.50:7530 (new)
-
-flare sync 0
-# Registering token... ✓
-# Name: raspberrypi
-# ✓ Saved
-```
-
-### 4. Add Config to Your Project
-
-Create `flare.toml` in repo root:
-
-```toml
-[app]
-name = "my-app"
-version = "1.0.0"
-
-[run]
-command = "node server.js"
-port = 3000
-```
-
-### 5. Deploy
-
-```bash
-# Deploy to saved device
-flare deploy user/my-project --device 0 
-## (I don't remember, it's works or not.)
-
-# Or by name
-flare deploy user/my-project --device raspberrypi
-```
-
-### 6. Manage Apps
-
-```bash
-flare start my_app      # Start application
-flare stop my_app       # Stop application
-flare restart my_app    # Restart application
-flare rollback my_app   # Rollback to previous version
+# With a custom forge (Gitea/Forgejo base URL)
+flare deploy user/my-project --forge http://192.168.1.50:3000
 ```
 
 ---
@@ -158,29 +92,34 @@ Flare uses dual authentication for security:
 Used for downloading repositories from GitHub/Forgejo/etc.
 
 ```bash
-flare login
+flare auth login
 Username: myuser
 Password: ghp_xxxxx  # GitHub token or Forge password
 ```
 
-Stored in `~/.flare/auth.toml`
+Stored in `~/.flare/auth.toml` (permissions restricted to the owner).
 
 ### Daemon Authentication
-Used for connecting to devices. Automatically generated during sync.
+Used for connecting to devices. Generated during sync and required for every
+control message (deploy, start/stop/restart/rollback, health).
 
 ```bash
-flare discover    # Find devices
-flare sync 0      # Generate and register token
+flare discover          # Find devices
+# On the target device, `flared` prints a one-time pairing code on first start:
+#   First-time pairing code: A1B2C3
+flare sync 0 --code A1B2C3
 ```
 
 **How it works:**
 1. CLI generates random 32-byte token
 2. Hashes it with argon2
-3. Sends hash to daemon
-4. Daemon stores hash in `~/.flare/daemon_tokens.toml`
-5. CLI stores plain token in `~/.flare/flare.conf`
+3. Sends the hash to the daemon — the *first* enrollment must also present the
+   one-time pairing code; later enrollments must prove an existing token
+4. Daemon stores the hash in `~/.flare/daemon_tokens.toml`
+5. CLI stores the plain token in `~/.flare/flare.conf`
 
-All future deploys use this token automatically.
+All future deploys **and** management commands use this token automatically when
+you pass `--device <id|name>` (or when the host:port matches a saved device).
 
 ---
 
@@ -192,13 +131,14 @@ All future deploys use this token automatically.
 # 1. Start daemon
 cargo run --bin flared
 
-# 2. Auth
-cargo run --bin flare -- login
+# 2. Auth (git credentials)
+cargo run --bin flare -- auth login
 # Username: test
 # Password: token123
 
+# Pair with the daemon (copy its startup pairing code)
 cargo run --bin flare -- discover
-cargo run --bin flare -- sync 0
+cargo run --bin flare -- sync 0 --code A1B2C3
 
 # 3. Create test repo (or use existing)
 mkdir test-app && cd test-app
@@ -219,9 +159,10 @@ git init && git add . && git commit -m "init"
 # 4. Deploy
 cargo run --bin flare -- deploy youruser/test-app --device 0
 
-# 5. Manage
-cargo run --bin flare -- stop test_app
-cargo run --bin flare -- start test_app
+# 5. Manage (management needs the token too: pass --device)
+cargo run --bin flare -- stop test_app --device 0
+cargo run --bin flare -- start test_app --device 0
+cargo run --bin flare -- rollback test_app --device 0
 ```
 
 ### Remote Testing
@@ -235,34 +176,45 @@ ssh pi@192.168.1.100 "flared"
 
 # From local machine
 flare discover
-flare sync 0
+flare sync 0 --code A1B2C3
 flare deploy user/repo --device 0
 ```
 
 ### Troubleshooting
 
 **"No devices configured"**
-→ Run `flare discover && flare sync 0` first
+→ Run `flare discover && flare sync <range> --code <pairing-code>` first
 
 **"Invalid token"**
-→ Re-sync device: `flare sync 0` and replace token
+→ The device either isn't paired or the token changed. Use `--device <id|name>`,
+  or re-sync: `flare sync 0 --code <pairing-code>`
 
 **"App not found"**
-→ Use `_` in app names: `flare stop user_repo` not `user/repo` (already fix it)
+→ You can pass either the repo name (`user_repo`) or the `[app].name` from
+  `flare.toml`; both are resolved.
 
 **Connection refused**
 → Check firewall: `sudo ufw allow 7530/tcp && sudo ufw allow 7001/udp`
 
-**start command fails**
-→ Only works for apps with `[run]` section (static sites not supported yet, see [#1](issues))
+**"start" does nothing / fails**
+→ `start`/`stop`/`restart`/`rollback` only apply to apps with a `[run]` section.
+  Static (`[web]`-only) sites are served by the gateway directly.
+→ On Windows, `docker`/`sqlite3` must be on PATH for database features.
+
+**systemd isolation fails**
+→ `[isolation] type = "systemd"` is Unix-only and needs root (writes a unit to
+  `/etc/systemd/system`).
 
 ---
 
 ## Known Issues
 
-- [x] App names with `/` must use `_` in management commands [#2]
-- [ ] `flare start` doesn't work for static sites (`[web]` only apps) [#1]
-- [ ] Gateway reverse proxy not implemented (static sites only)
+- [x] App names with `/` are normalized, and both repo names and `[app].name`
+      resolve to the same app
+- [x] Reverse proxy (API apps) implemented in the gateway
+- [ ] No log streaming yet (`flare logs`) [#1]
+- [ ] Secrets/notify/storage/metrics sections are parsed but not acted on
+- [ ] Health checks only run once on deploy (no continuous monitoring)
 
 
 ---
@@ -272,65 +224,70 @@ flare deploy user/repo --device 0
 ```
 CLI (your laptop)              Daemon (target device)
      |                                |
-     | 1. Package repo                |
+     | 1. Send repo + branch          |
      |------------------------------->|
      |                                | 2. Download archive
-     |                                | 3. Extract to ~/.flare/apps/
+     |                                | 3. Extract to versions/<ts>/
      |                                | 4. Read flare.toml
      |                                | 5. Run [build] if present
      |                                | 6. Setup [database] if present
-     |                                | 7. Start [run] or register [web]
+     |                                | 7. Start [run], register [web] or systemd unit
      |<-------------------------------|
      | 8. Receive success/error       |
 ```
+
+Each deploy lands in a new `versions/<timestamp>/`; `current` points at the live
+one and the last 4 versions are kept, which is what makes `flare rollback` work.
 
 **File Structure:**
 ```
 ~/.flare/
 ├── apps/
 │   └── user_repo/
-│       ├── current -> versions/1234567890/
+│       ├── current            # text file with the live version name
 │       ├── versions/
-│       │   ├── 1234567890/  # Current deployment
-│       │   └── 1234567880/  # Previous (for rollback)
-│       ├── state.toml       # App state (PID, status)
-│       └── flare.toml       # App config
-└── auth.toml                # Optional: saved credentials
+│       │   ├── 1234567890/    # Current deployment (flare.toml lives here)
+│       │   └── 1234567880/    # Previous (for rollback)
+│       └── state.toml         # App state (PID, status)
+└── auth.toml                  # Optional: saved credentials
 ```
 
 ---
 
 ## Security
 
-Flare uses **TLS** for all connections between CLI and daemon.
+Flare uses **TLS** for all connections between CLI and daemon, and **every
+control message** (deploy, start/stop/restart/rollback, health) requires a valid
+daemon token. The first pairing additionally needs the one-time code the daemon
+prints at startup.
 
 ### Local Network
-Auto-generates self-signed certificates. No configuration needed.
+The daemon auto-generates a self-signed certificate; the CLI skips certificate
+verification for `localhost`/private IPs. No configuration needed.
 
 ### Production/Internet
-Set environment variables:
+Use real certificates:
 
 ```bash
 FLARE_TLS_CERT=/etc/letsencrypt/live/yourdomain/fullchain.pem
 FLARE_TLS_KEY=/etc/letsencrypt/live/yourdomain/privkey.pem
 ```
 
-Or in `.env`:
-```bash
-FLARE_TLS_CERT=/path/to/cert.pem
-FLARE_TLS_KEY=/path/to/key.pem
-```
-
-Daemon automatically loads certificates on startup.
+The daemon loads them on startup (and the gateway serves HTTPS with them too).
+Credentials and tokens are stored with owner-only permissions (`0600`).
 
 ---
 
 ## Built-in Gateway
 
-Flare daemon includes an HTTP gateway on port 80 that:
+Flare daemon includes an HTTP(S) gateway (default port 80, override with
+`FLARE_GATEWAY_PORT`) that:
+
 - Serves static sites by domain (`[web]` section)
-- Proxies to running apps (coming soon)
+- Reverse-proxies running apps (forwards method, headers and body)
 - Handles virtual hosts automatically
+- Answers a health probe at `/.flare/health`
+- Serves **HTTPS** when `FLARE_TLS_CERT` / `FLARE_TLS_KEY` are set, otherwise HTTP
 
 **Example:**
 ```toml
@@ -340,6 +297,18 @@ root = "./public"
 ```
 
 Access via `http://mysite.local` (add to `/etc/hosts` or use local DNS).
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `FLARE_PORT` | `7530` | Daemon TCP control port |
+| `FLARE_DISCOVERY_PORT` | `7001` | Daemon UDP discovery port |
+| `FLARE_GATEWAY_PORT` | `80` | Gateway HTTP(S) port |
+| `FLARE_APPS_DIR` | `~/.flare/apps` | Where apps are stored |
+| `FLARE_TLS_CERT` / `FLARE_TLS_KEY` | *(self-signed)* | TLS certificate/key for the daemon and gateway |
 
 ---
 
@@ -355,48 +324,44 @@ Access via `http://mysite.local` (add to `/etc/hosts` or use local DNS).
 
 ## Roadmap
 
-### ✅ Completed (v0.2)
-- [x] Basic deploy workflow
-- [x] Database auto-setup (PostgreSQL, MySQL, SQLite)
-- [x] Static site gateway (HTTP :80)
-- [x] Health checks (single check on deploy)
-- [x] Rollback system (version backup/restore)
-- [x] Start/Stop/Restart via daemon
+### ✅ Completed (v0.3)
+- [x] Basic deploy workflow (async download, branch selection)
+- [x] Database auto-setup (PostgreSQL, MySQL, SQLite) with readiness checks
+- [x] Static site gateway (HTTP :80 or HTTPS)
+- [x] Gateway reverse proxy for APIs
+- [x] Versioned deploys + working rollback (keeps last 4)
+- [x] Start/Stop/Restart via daemon (process groups, no zombies)
+- [x] Token auth on deploy **and** management, one-time pairing code
 - [x] Auto-generated secure tokens (argon2)
-- [x] Dual authentication (git + daemon)
-- [x] UDP discovery
-- [x] Device management (sync, list, remove)
+- [x] UDP discovery + device management (sync, list, remove)
 - [x] TLS encryption (self-signed + custom certs)
 - [x] Deployment hooks (pre/post)
-- [x] Process isolation (systemd, chroot)
+- [x] Isolation: process groups, systemd units (autostart), chroot
+- [x] Windows daemon support (cross-platform via `#[cfg]`)
 
-### 🚧 In Progress (v0.3)
-- [ ] Gateway reverse proxy for APIs ([#3])
-- [ ] Fix start command for `[web]` only apps ([#1])
-- [ ] Auto-normalize app names with `/` ([#2])
+### 🚧 In Progress (v0.4)
 - [ ] Continuous health monitoring (not just on deploy)
+- [ ] Log streaming (`flare logs myapp --follow`)
+- [ ] Secrets / notify / storage / metrics sections
+- [ ] Per-IP rate limiting
 
-### 📋 Planned (v0.4)
+### 📋 Planned (v0.5)
 - [ ] Deploy to multiple devices (`--device all`)
-- [ ] Logs command (`flare logs myapp --follow`)
-- [ ] Auto health endpoint injection
+- [ ] Blue-green / canary deployment strategy
 - [ ] Environment variable management UI
+- [ ] Configuration validation (`flare check`)
 
 ### 🔮 Future (v1.0+)
 - [ ] Web dashboard
 - [ ] Metrics collection & visualization
-- [ ] Canary deployments
-- [ ] Blue-green deployment strategy
 - [ ] Multi-instance deployments (load balancing)
 - [ ] Plugin system
-- [ ] Windows daemon support
 - [ ] Container support (optional, for isolation)
 - [ ] Notifications (email, Telegram, webhooks)
 - [ ] Storage integration (S3, MinIO)
 - [ ] Resource limits enforcement
 - [ ] Auto-scaling
 - [ ] CLI autocomplete
-- [ ] Configuration validation (`flare check`)
 
 ### 💡 Ideas Under Discussion
 - [ ] GitOps mode (watch repo for changes)
@@ -413,10 +378,11 @@ Access via `http://mysite.local` (add to `/etc/hosts` or use local DNS).
 Check `examples/` directory for production-ready configs:
 
 - `nodejs-api.toml` - Express.js API
-- `python-flask.toml` - Flask application
-- `rust-actix.toml` - Actix web server
-- `static-site.toml` - React/Vue/Svelte build output
-- `fullstack.toml` - App with database and build steps
+- `python-api.toml` - Flask/Django application
+- `website.toml` - Static site
+- `full-example.toml` - App with database and build steps
+
+See also `examples/CONFIG.md` for the full `flare.toml` reference.
 
 ---
 

@@ -1,31 +1,72 @@
+//! `manage` handler — start/stop/restart/rollback an app.
+//!
+//! INFO: The request must carry a valid daemon token (the same token used for
+//!       deploy). This closes the previous hole where anyone reachable on the
+//!       control port could control apps.
+//!
+//! WARN: AppManager runs blocking code (spawn/kill/sleep) directly inside this
+//!       async handler, which stalls a Tokio worker thread.
+
 use anyhow::Result;
 use common::{ManageRequest, ManageResponse, send_json};
-use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
-use tracing::info;
 
-use crate::app_config;
-use crate::deploy;
+use crate::app::AppManager;
+use crate::auth::TokenStore;
+use crate::gateway::Route;
+use crate::handlers::Context;
 
-pub async fn handle_manage(
+pub async fn handle(
     mut socket: TlsStream<TcpStream>,
-    req: ManageRequest,
+    msg: serde_json::Value,
+    ctx: Context,
 ) -> Result<()> {
-    let result = match req.action.as_str() {
-        "start" => start_app(&req.app),
-        "stop" => stop_app(&req.app),
-        "restart" => restart_app(&req.app),
-        "rollback" => rollback_app(&req.app),
-        _ => Err(anyhow::anyhow!("Unknown action: {}", req.action)),
+    let req: ManageRequest = serde_json::from_value(msg)?;
+
+    // INFO: Authenticate before doing anything else.
+    let store = TokenStore::load();
+    let token = req.daemon_token.as_deref().unwrap_or("");
+    if !store.verify(token) {
+        let response = ManageResponse {
+            protocol_version: common::PROTOCOL_VERSION.to_string(),
+            success: false,
+            message: "Invalid token".into(),
+        };
+        return send_json(&mut socket, &response).await;
+    }
+
+    // INFO: AppManager is blocking (spawn/kill/wait), so run it on the blocking
+    //       pool instead of stalling the async worker.
+    let app = req.app.clone();
+    let action = req.action.clone();
+    let result = match tokio::task::spawn_blocking(move || match action.as_str() {
+        "start" => AppManager::start(&app),
+        "stop" => AppManager::stop(&app),
+        "restart" => AppManager::restart(&app),
+        "rollback" => AppManager::rollback(&app),
+        _ => Err(anyhow::anyhow!("Unknown action: {}", action)),
+    })
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => Err(anyhow::anyhow!("manage task failed: {}", e)),
     };
+
+    // INFO: On success, re-publish the gateway route so a rollback/restart is
+    //       reflected immediately (new version dir, new pid).
+    if result.is_ok() {
+        refresh_route(&req.app, &ctx).await;
+    }
 
     let response = match result {
         Ok(msg) => ManageResponse {
+            protocol_version: common::PROTOCOL_VERSION.to_string(),
             success: true,
             message: msg,
         },
         Err(e) => ManageResponse {
+            protocol_version: common::PROTOCOL_VERSION.to_string(),
             success: false,
             message: e.to_string(),
         },
@@ -34,87 +75,46 @@ pub async fn handle_manage(
     send_json(&mut socket, &response).await
 }
 
-fn start_app(app: &str) -> Result<String> {
-    let dir = app_config::app_dir(app);
-    let mut state = app_config::load_state_or_bail(&dir)?;
+// INFO: Re-reads the app's config/state and updates the shared route table.
+async fn refresh_route(app: &str, ctx: &Context) {
+    let root = match AppManager::resolve_root(app) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    let live = match crate::versions::current(&root) {
+        Some(v) => v,
+        None => return,
+    };
+    let config = match common::load_app_config(&live) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
 
-    if state.status == "running" {
-        return Ok("Already running".into());
-    }
+    let pid = common::load_state(&root).ok().flatten().and_then(|s| s.pid);
+    let name = config.app.name.clone();
 
-    let config = app_config::load_config(&dir)?;
-    let run = config
-        .run
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No [run] section in config"))?;
-    let mut cmd = deploy::build_run_command(run, config.env.as_ref(), config.isolation.as_ref(), &dir);
-    let child = cmd.spawn()?;
-    let pid = child.id();
-
-    state.status = "running".into();
-    state.pid = Some(pid);
-    app_config::save_state(&dir, &state)?;
-
-    info!("Started {} with PID {}", app, pid);
-    Ok(format!("Started with PID {}", pid))
-}
-
-fn stop_app(app: &str) -> Result<String> {
-    let dir = app_config::app_dir(app);
-    let mut state = app_config::load_state_or_bail(&dir)?;
-
-    if let Some(pid) = state.pid {
-        let status = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status()?;
-
-        if !status.success() {
-            info!("kill {} returned non-zero (process may already be dead)", pid);
+    if let Some(web) = &config.web {
+        // Static site: point the domain at the (possibly new) version root.
+        let site_root = live.join(web.root.as_deref().unwrap_or("."));
+        ctx.routes.write().await.insert(
+            web.domain.clone(),
+            Route::Static {
+                root: site_root.to_string_lossy().into(),
+            },
+        );
+    } else if let Some(run) = &config.run {
+        if let Some(port) = run.port {
+            if pid.is_some() {
+                ctx.routes
+                    .write()
+                    .await
+                    .insert(name.clone(), Route::App { port, pid });
+            } else {
+                // Stopped: drop the route so the gateway reports "no route".
+                ctx.routes.write().await.remove(&name);
+            }
         }
     }
 
-    state.status = "stopped".into();
-    state.pid = None;
-    app_config::save_state(&dir, &state)?;
-
-    info!("Stopped {}", app);
-    Ok("Stopped".into())
-}
-
-fn restart_app(app: &str) -> Result<String> {
-    stop_app(app)?;
-    std::thread::sleep(Duration::from_millis(500));
-    start_app(app)
-}
-
-fn rollback_app(app: &str) -> Result<String> {
-    let dir = app_config::app_dir(app);
-    let versions = dir.join("versions");
-
-    let mut entries: Vec<_> = std::fs::read_dir(&versions)?
-        .filter_map(|e| e.ok())
-        .collect();
-
-    entries.sort_by_key(|e| e.path());
-    let latest = entries
-        .last()
-        .ok_or_else(|| anyhow::anyhow!("No backups found for {}", app))?;
-
-    let current = dir.join("current");
-    if current.exists() {
-        std::fs::remove_file(&current)?;
-    }
-
-    std::os::unix::fs::symlink(latest.path(), &current)?;
-    info!("Rolled back {} to {:?}", app, latest.path());
-
-    // restart if running
-    let state = app_config::load_state(&dir)?;
-    if let Some(s) = state {
-        if s.status == "running" {
-            restart_app(app)?;
-        }
-    }
-
-    Ok("Rolled back".into())
+    ctx.health_pids.write().await.insert(name, pid);
 }

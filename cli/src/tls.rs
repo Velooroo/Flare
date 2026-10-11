@@ -1,3 +1,9 @@
+//! TLS client used for every CLI → daemon connection.
+//!
+//! INFO: For local/private addresses we deliberately skip certificate
+//!       verification (the daemon usually presents a self-signed cert). For
+//!       public hosts we validate against the system root store.
+
 use anyhow::Result;
 use rustls::pki_types::{CertificateDer, ServerName};
 use std::net::IpAddr;
@@ -25,6 +31,11 @@ pub async fn connect(stream: TcpStream, host: &str) -> Result<TlsStream<TcpStrea
     Ok(connector.connect(domain, stream).await?)
 }
 
+// INFO: A host counts as "local" if it is `localhost` or a loopback/private IP.
+//
+// WARN: Hostnames such as `raspberrypi.local` are treated as public, so their
+//       self-signed certificate is rejected. Use the device's IP address, or add
+//       the cert to the trust store.
 fn is_local(host: &str) -> bool {
     if host == "localhost" {
         return true;
@@ -32,6 +43,7 @@ fn is_local(host: &str) -> bool {
 
     if let Ok(addr) = host.parse::<IpAddr>() {
         match addr {
+            // NOTE: `is_private` covers 10/8, 172.16/12 and 192.168/16.
             IpAddr::V4(ipv4) => ipv4.is_loopback() || ipv4.is_private(),
             IpAddr::V6(ipv6) => ipv6.is_loopback(),
         }
@@ -46,6 +58,8 @@ fn ca_bundle() -> rustls::RootCertStore {
     store
 }
 
+// WARN: Accepts ANY server certificate. Safe-ish on a trusted LAN, but it means
+//       there is no protection against a local man-in-the-middle.
 #[derive(Debug)]
 struct SkipVerify;
 

@@ -1,3 +1,11 @@
+//! `flare discover` and `flare sync` — find daemons on the LAN over UDP and pair
+//! with them.
+//!
+//! INFO: Discovery broadcasts `FLARE_DISCOVER` to 255.255.255.255:7001; each
+//!       daemon replies `FLARE_HERE:<tcp_port>`. Pairing then happens over TLS on
+//!       that TCP port, where the CLI registers an argon2 hash of a fresh token
+//!       and stores the plain token locally.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
@@ -12,6 +20,7 @@ pub struct DiscoveredDevice {
     pub port: u16,
 }
 
+// INFO: Read-only: lists what was found and marks already-saved devices.
 pub async fn discover() -> Result<()> {
     let found = scan_network().await?;
 
@@ -39,7 +48,13 @@ pub async fn discover() -> Result<()> {
     Ok(())
 }
 
-pub async fn sync(range: String) -> Result<()> {
+// INFO: Re-scans the network, then pairs with the devices at the given indices.
+//       `range` is written like `0`, `0,2` or `0-3`.
+//
+// INFO: Pairing is protected by the daemon: a fresh daemon requires the one-time
+//       code it printed at startup (`--code`), and an already-paired daemon
+//       requires an existing token.
+pub async fn sync(range: String, code: Option<String>) -> Result<()> {
     // re-run discovery to get fresh list
     println!("Re-discovering devices...\n");
     let found = scan_network().await?; // Search devices
@@ -48,6 +63,23 @@ pub async fn sync(range: String) -> Result<()> {
     let mut config = common::load_config()?;
     let mut synced = 0;
 
+    // INFO: Resolve the pairing code once (prompt if not given on the CLI).
+    let pairing_code = match code {
+        Some(c) => Some(c),
+        None => {
+            print!("Pairing code (first-time setup; leave blank if already paired): ");
+            io::stdout().flush()?;
+            let mut line = String::new();
+            io::stdin().read_line(&mut line)?;
+            let line = line.trim();
+            if line.is_empty() {
+                None
+            } else {
+                Some(line.to_string())
+            }
+        }
+    };
+
     for idx in indices {
         let device = found
             .get(idx as usize)
@@ -55,13 +87,31 @@ pub async fn sync(range: String) -> Result<()> {
 
         let token = common::generate_token();
         let token_hash = common::hash_token(&token)?;
+        // NOTE: This logs the argon2 *hash*, not the token (the message is a bit
+        //       misleading). Harmless, but consider `debug!` to keep it quiet.
         info!("Generate token: {:?}", token_hash);
 
+        // INFO: If we already hold a token for this daemon, present it so an
+        //       already-paired daemon accepts the new enrollment.
+        let existing = common::find_device_by_addr(&device.host, device.port).and_then(|d| d.token);
+
         // send hash to daemon
-        let registered = register_token(&device.host, device.port, &token_hash).await?;
+        let registered = register_token(
+            &device.host,
+            device.port,
+            &token_hash,
+            existing.as_deref(),
+            pairing_code.as_deref(),
+        )
+        .await?;
 
         if !registered {
-            println!("Failed to register token for {}", device.host);
+            println!(
+                "Failed to register token for {}. \
+                 For a fresh device, pass its startup pairing code via --code. \
+                 If it is already paired, sync from a machine that holds its token.",
+                device.host
+            );
             continue;
         }
 
@@ -96,6 +146,8 @@ pub async fn sync(range: String) -> Result<()> {
     Ok(())
 }
 
+// INFO: Sends the broadcast and collects replies for 2 seconds.
+// WARN: Deduplicates by host only, so two daemons on one machine collapse into one.
 pub async fn scan_network() -> Result<Vec<DiscoveredDevice>> {
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.set_broadcast(true)?;
@@ -108,10 +160,16 @@ pub async fn scan_network() -> Result<Vec<DiscoveredDevice>> {
 
     let _ = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            if let Ok((_, addr)) = socket.recv_from(&mut buf).await {
+            if let Ok((len, addr)) = socket.recv_from(&mut buf).await {
+                let response = String::from_utf8_lossy(&buf[..len]);
+                let port = response
+                    .strip_prefix("FLARE_HERE:")
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(7530);
+
                 let device = DiscoveredDevice {
                     host: addr.ip().to_string(),
-                    port: 7530,
+                    port,
                 };
 
                 if !found
@@ -125,16 +183,10 @@ pub async fn scan_network() -> Result<Vec<DiscoveredDevice>> {
     })
     .await;
 
-    // if found.is_empty() {
-    //      println!("No devices found. Run 'flare discover' first");
-    //     Ok(found)
-    // } else {
-    //     Ok(found)
-    // }
     Ok(found)
-    // Return Null or doesn't Vec -> found
 }
 
+// INFO: Parses `0`, `0,2` or `0-3` into a list of indices.
 fn parse_range(range: &str) -> Result<Vec<u32>> {
     let mut result = Vec::new();
 
@@ -155,15 +207,25 @@ fn parse_range(range: &str) -> Result<Vec<u32>> {
     Ok(result)
 }
 
-async fn register_token(host: &str, port: u16, token_hash: &str) -> Result<bool> {
+// INFO: Opens a short TLS connection just to register the token hash.
+async fn register_token(
+    host: &str,
+    port: u16,
+    token_hash: &str,
+    existing_token: Option<&str>,
+    pairing_code: Option<&str>,
+) -> Result<bool> {
     use common::{RegisterTokenRequest, RegisterTokenResponse};
 
     let tcp = TcpStream::connect(format!("{}:{}", host, port)).await?;
     let mut socket = crate::tls::connect(tcp, host).await?;
 
     let req = RegisterTokenRequest {
+        protocol_version: common::PROTOCOL_VERSION.to_string(),
         msg_type: "register_token".into(),
         token_hash: token_hash.to_string(),
+        existing_token: existing_token.map(|s| s.to_string()),
+        pairing_code: pairing_code.map(|s| s.to_string()),
     };
 
     common::send_json(&mut socket, &req).await?;

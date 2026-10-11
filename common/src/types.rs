@@ -1,11 +1,26 @@
+//! Wire protocol + configuration schema shared by the CLI and the daemon.
+//!
+//! The daemon understands four message kinds, each with its own request/response
+//! pair: `deploy`, `manage`, `register_token` and `health`. Every request carries
+//! `protocol_version` so both sides can refuse to talk to an incompatible peer.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// INFO: Bump this whenever the on-the-wire JSON shape changes. The daemon rejects
+//       any message whose `protocol_version` differs (see handlers/mod.rs).
+pub const PROTOCOL_VERSION: &str = "1";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeployRequest {
+    pub protocol_version: String,
     pub msg_type: String,
     pub repo: String,
     pub forge: String,
+    // INFO: Git branch/ref to fetch. Missing or empty means the forge default;
+    //       the CLI defaults to "main".
+    #[serde(default)]
+    pub branch: Option<String>,
     pub auth_user: Option<String>,
     pub auth_password: Option<String>,
     pub daemon_token: Option<String>,
@@ -13,6 +28,7 @@ pub struct DeployRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeployResponse {
+    pub protocol_version: String,
     pub success: bool,
     pub message: String,
     pub app_dir: Option<String>,
@@ -20,13 +36,21 @@ pub struct DeployResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ManageRequest {
-    pub msg_type: String, // "manage"
+    pub protocol_version: String,
+    pub msg_type: String,
     pub app: String,
-    pub action: String, // "start", "stop", "restart"
+    pub action: String,
+    // INFO: Proof that the caller is a paired device. The daemon rejects the
+    //       request when this does not match a registered token.
+    //       `#[serde(default)]` keeps old clients from failing to deserialize;
+    //       they simply get "Invalid token".
+    #[serde(default)]
+    pub daemon_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ManageResponse {
+    pub protocol_version: String,
     pub success: bool,
     pub message: String,
 }
@@ -42,6 +66,23 @@ pub struct AppState {
     pub isolation: Option<String>,
 }
 
+/// Everything a project can declare in its `flare.toml`.
+///
+/// A section is `Option` unless it is required for every app. If a section is
+/// absent from the file, serde simply leaves it as `None`.
+///
+/// Status of each section (what the daemon actually does today):
+///   app       — required, used everywhere
+///   build     — implemented (runs `sh -c <command>`)
+///   run       — implemented (spawns the process)
+///   env       — implemented, merged with the repo `.env`
+///   web       — implemented as static-only virtual host
+///   health    — partially implemented (see `HealthSection`)
+///   isolation — `none` works; `systemd`/`chroot` are best-effort
+///   database  — implemented via Docker (sqlite without Docker)
+///   hooks     — implemented, but the allowlist is not a real sandbox
+///   storage / notify / secrets / resource_limits / metrics / strategy
+///             — parsed for forward compatibility, NOT acted on yet
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub app: AppSection,
@@ -51,6 +92,9 @@ pub struct AppConfig {
     pub web: Option<WebSection>,
     pub health: Option<HealthSection>,
     pub isolation: Option<IsolationSection>,
+    // TODO: `storage`, `notify`, `secrets`, `resource_limits`, `metrics` and
+    //       `strategy` are accepted here for forward compatibility but the
+    //       pipeline never reads them. `database` and `hooks` ARE implemented.
     pub storage: Option<StorageSection>,
     pub database: Option<DatabaseSection>,
     pub notify: Option<NotifySection>,
@@ -78,19 +122,36 @@ pub struct RunSection {
     pub port: Option<u16>,
 }
 
+/// `[web]` — serve a folder as a static site behind the built-in gateway.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebSection {
+    /// Host header the gateway matches on (virtual host).
     pub domain: String,
+    /// Folder to serve, relative to the extracted app directory.
     pub root: Option<String>,
 }
 
+/// `[health]` — how the daemon should probe a freshly started app.
+///
+/// INFO: Both fields default, so a bare `[health]` block parses. `url` is only
+///       required when `auto_add = false` (checked in the pipeline).
+/// WARN: With `auto_add = true` the daemon probes `http://localhost:<run.port>/health`
+///       (see `determine_health_url`). If the app has no `[run].port`, no probe
+///       happens.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HealthSection {
+    #[serde(default)]
     pub url: String,
     pub timeout: Option<u64>,
+    #[serde(default)]
     pub auto_add: bool,
 }
 
+/// `[isolation]` — process isolation strategy.
+///
+/// WARN: Only `"none"` (or omitting the section) is reliable. `"systemd"` uses
+///       `systemd-run --user` which needs a logind session; `"chroot"` runs the
+///       app inside the extracted app dir, which usually lacks a usable shell.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IsolationSection {
     pub r#type: String,
@@ -108,8 +169,14 @@ pub struct StorageSection {
     pub public: Option<bool>,
 }
 
+/// `[database]` — auto-provision a database on deploy.
+///
+/// INFO: `postgres` and `mysql` are started as Docker containers named
+///       `flare-<name>-db`; `sqlite` just creates a file. `preseed` is an SQL
+///       file executed once after the database is ready.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DatabaseSection {
+    /// One of: `postgres`, `mysql`, `sqlite`.
     pub r#type: String,
     pub name: Option<String>,
     pub user: Option<String>,
@@ -137,6 +204,11 @@ pub struct ResourceLimitsSection {
     pub timeout: Option<String>,
 }
 
+/// `[hooks]` — shell snippets executed around a deployment.
+///
+/// WARN: The daemon runs hooks with `sh -c`, so the allowlist only inspects the
+///       first word. `"echo hi; rm -rf /"` passes the check. Do not treat this as
+///       a security boundary (see pipeline::run_hook).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HooksSection {
     pub pre_deploy: Option<String>,
@@ -156,6 +228,10 @@ pub struct StrategySection {
     pub wait_time: Option<String>,
 }
 
+/// A device saved by `flare sync` in `~/.flare/flare.conf`.
+///
+/// WARN: `token` is the *plain* daemon token. It is stored unencrypted on disk,
+///       so the config file should be treated as a secret.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Device {
     pub id: u32,
@@ -171,13 +247,24 @@ pub struct FlareConfig {
     pub devices: Vec<Device>,
 }
 
+/// Sent by `flare sync` to enroll a new CLI token on the daemon.
+///
+/// INFO: Trust-on-first-use with a twist: the *first* enrollment on a fresh
+///       daemon must present the one-time pairing code the daemon printed at
+///       startup. After that, the daemon requires a valid `existing_token`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterTokenRequest {
+    pub protocol_version: String,
     pub msg_type: String,
     pub token_hash: String,
+    #[serde(default)]
+    pub existing_token: Option<String>,
+    #[serde(default)]
+    pub pairing_code: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterTokenResponse {
+    pub protocol_version: String,
     pub success: bool,
 }
