@@ -9,16 +9,14 @@
 
 mod app;
 mod auth;
+mod control;
 mod discovery;
 mod dispatch;
 mod gateway;
-mod handlers;
-mod listen;
 mod pipeline;
 mod platform;
 mod server;
 mod systemd;
-mod tls;
 mod versions;
 
 #[tokio::main]

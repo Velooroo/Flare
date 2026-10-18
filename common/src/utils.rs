@@ -13,9 +13,13 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use rand::RngCore;
 use std::path::PathBuf;
 
-// INFO: Root of all Flare state (~/.flare). Falls back to /tmp when the home
-//       directory cannot be determined, which mainly affects odd containers.
+// INFO: Root of all Flare state (~/.flare). `FLARE_HOME` overrides it (handy for
+//       tests and containers). Falls back to /tmp when the home directory cannot
+//       be determined.
 pub fn flare_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("FLARE_HOME") {
+        return PathBuf::from(dir);
+    }
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
     home.join(".flare")
 }

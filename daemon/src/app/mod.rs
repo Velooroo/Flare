@@ -11,8 +11,8 @@
 //!       systemctl (start/stop/restart); everything else is a real child process
 //!       put in its own process group so the whole tree can be signalled.
 //!
-//! WARN: These functions are synchronous and blocking; the request handlers run
-//!       them on the blocking pool (see handlers::manage).
+//! WARN: These functions are synchronous and blocking; the `manage` control
+//!       handler runs them on the blocking pool (see control.rs).
 
 use anyhow::Result;
 use common::AppState;

@@ -8,24 +8,27 @@ use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use tracing::error;
 
+use crate::control::DaemonControl;
 use crate::gateway;
-use crate::handlers::Router;
 
 pub async fn run(port: u16) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
-    // INFO: Build the TLS acceptor once and share it across all connections.
-    let acceptor = crate::tls::build_acceptor()?;
-
-    // INFO: The route table is shared between the gateway (reader) and the deploy
-    //       handler (writer). It maps a Host name to a static dir or an app port.
+    // INFO: The route table is shared between the gateway (reader) and the
+    //       control handlers (writer). It maps a Host name to a static dir or an
+    //       app port.
     let routes: gateway::Routes = Arc::new(RwLock::new(HashMap::new()));
-    let router = Arc::new(Router::new(routes.clone()));
+
+    // INFO: Build the control dispatcher once. `common::rpc::serve_on` wraps every
+    //       connection in Flare's TLS and hands it to monolith.
+    let mut dispatcher = common::monolith::Dispatcher::new();
+    common::control::register(&mut dispatcher, DaemonControl::new(routes.clone()));
+    let dispatcher = Arc::new(dispatcher);
 
     let mut joins = JoinSet::new();
 
-    // INFO: Gateway binds port 80 by default ($FLARE_GATEWAY_PORT). It now returns
-    //       an error instead of panicking if the bind fails.
+    // INFO: Gateway binds port 80 by default ($FLARE_GATEWAY_PORT). It returns an
+    //       error instead of panicking if the bind fails.
     let gw_routes = routes.clone();
     joins.spawn(async move {
         if let Err(e) = gateway::run(gw_routes).await {
@@ -44,8 +47,8 @@ pub async fn run(port: u16) -> Result<()> {
         }
     });
 
-    // INFO: Runs until the accept loop returns (which is effectively never).
-    let accept_result = crate::listen::accept_loop(listener, router, acceptor).await;
+    // INFO: Runs until the TLS accept loop returns (which is effectively never).
+    let accept_result = common::rpc::serve_on(dispatcher, listener).await;
 
     joins.shutdown().await;
 

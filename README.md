@@ -262,8 +262,12 @@ daemon token. The first pairing additionally needs the one-time code the daemon
 prints at startup.
 
 ### Local Network
-The daemon auto-generates a self-signed certificate; the CLI skips certificate
-verification for `localhost`/private IPs. No configuration needed.
+The daemon keeps a single TLS identity in `~/.flare/tls/` — it is generated once
+and reused across restarts, so its certificate fingerprint is stable. The CLI
+pins that fingerprint on first contact (trust-on-first-use) in
+`~/.flare/known_hosts.toml`. If the certificate ever changes, the CLI **refuses
+to connect** and reports a possible man-in-the-middle instead of silently
+trusting it. No configuration needed.
 
 ### Production/Internet
 Use real certificates:
@@ -274,7 +278,24 @@ FLARE_TLS_KEY=/etc/letsencrypt/live/yourdomain/privkey.pem
 ```
 
 The daemon loads them on startup (and the gateway serves HTTPS with them too).
-Credentials and tokens are stored with owner-only permissions (`0600`).
+For public hostnames the CLI validates against the WebPKI roots. Credentials and
+tokens are stored with owner-only permissions (`0600`).
+
+### Monolith RPC
+All security primitives live in `common::security`; `common::rpc` is the **only**
+way Flare talks to [monolith](monolith/README.md). It wraps the socket in TLS
+before handing it to monolith, so there is no plain-TCP code path inside Flare:
+
+```rust
+let client = chat::Client::from_endpoint(common::rpc::connect_endpoint(host, port).await?);
+```
+
+The daemon's own control plane (deploy / start-stop-restart-rollback / token
+enrollment / health) is declared once as a monolith service in
+`common::control`. The daemon implements the generated `control::Handler`; the
+CLI calls the generated `control::Client`. Same TLS transport, one wire contract,
+no hand-rolled framing.
+
 
 ---
 
@@ -308,7 +329,8 @@ Access via `http://mysite.local` (add to `/etc/hosts` or use local DNS).
 | `FLARE_DISCOVERY_PORT` | `7001` | Daemon UDP discovery port |
 | `FLARE_GATEWAY_PORT` | `80` | Gateway HTTP(S) port |
 | `FLARE_APPS_DIR` | `~/.flare/apps` | Where apps are stored |
-| `FLARE_TLS_CERT` / `FLARE_TLS_KEY` | *(self-signed)* | TLS certificate/key for the daemon and gateway |
+| `FLARE_HOME` | `~/.flare` | Root of all Flare state (TLS identity, tokens, known hosts) |
+| `FLARE_TLS_CERT` / `FLARE_TLS_KEY` | *(persisted self-signed)* | TLS certificate/key for the daemon and gateway |
 
 ---
 

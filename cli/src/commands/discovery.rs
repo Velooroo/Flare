@@ -10,7 +10,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tracing::info;
 
@@ -215,21 +214,15 @@ async fn register_token(
     existing_token: Option<&str>,
     pairing_code: Option<&str>,
 ) -> Result<bool> {
-    use common::{RegisterTokenRequest, RegisterTokenResponse};
+    let client = crate::commands::connect(host, port).await?;
 
-    let tcp = TcpStream::connect(format!("{}:{}", host, port)).await?;
-    let mut socket = crate::tls::connect(tcp, host).await?;
+    let reply = client
+        .register_token(
+            token_hash.to_string(),
+            existing_token.map(|s| s.to_string()),
+            pairing_code.map(|s| s.to_string()),
+        )
+        .await?;
 
-    let req = RegisterTokenRequest {
-        protocol_version: common::PROTOCOL_VERSION.to_string(),
-        msg_type: "register_token".into(),
-        token_hash: token_hash.to_string(),
-        existing_token: existing_token.map(|s| s.to_string()),
-        pairing_code: pairing_code.map(|s| s.to_string()),
-    };
-
-    common::send_json(&mut socket, &req).await?;
-    let resp: RegisterTokenResponse = common::recv_json(&mut socket).await?;
-
-    Ok(resp.success)
+    Ok(reply.success)
 }

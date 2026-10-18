@@ -3,8 +3,12 @@ resolver = "3"
 members = [
     "cli",
     "daemon",
-    "common"
+    "common",
 ]
+
+# INFO: monolith is developed as its own workspace (its plain-TCP feature is
+#       disabled when Flare depends on it), so keep it out of ours.
+exclude = ["monolith/rust"]
 
 # WARN: `panic = "abort"` makes the release binaries smaller and a touch faster,
 #       but any panic (e.g. the gateway's bind().unwrap(), or a nested Tokio

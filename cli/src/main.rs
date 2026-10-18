@@ -1,7 +1,8 @@
 //! flare — the command-line client.
 //!
 //! Sub-commands: auth, deploy, start/stop/restart/rollback, discover, sync, devices.
-//! It talks to a `flared` daemon over TLS using the framed JSON protocol from `common`.
+//! It talks to a `flared` daemon over Flare's TLS using the monolith control API
+//! (`common::control`), declared once and shared with the daemon.
 //!
 //! Comment legend: INFO / TODO / WARN / ERROR / FIXME / HACK / NOTE.
 
@@ -10,7 +11,6 @@ use clap::{Parser, Subcommand};
 use tracing::error;
 
 mod commands;
-mod tls;
 
 #[derive(Parser)]
 #[command(name = "flare", version, about = "Flare CLI")]

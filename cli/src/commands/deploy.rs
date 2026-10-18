@@ -2,10 +2,9 @@
 //!
 //! The CLI does not send the code. It only tells the daemon which repo/branch to
 //! pull; the daemon downloads the archive itself (see daemon pipeline::download).
+//! The request travels over Flare's TLS via the generated `control::Client`.
 
 use anyhow::Result;
-use common::{DeployRequest, DeployResponse, recv_json, send_json};
-use tokio::net::TcpStream;
 use tracing::info;
 
 // INFO: Deploy to an explicit --host (no saved device, no daemon token).
@@ -63,34 +62,30 @@ async fn deploy_to(
 ) -> Result<()> {
     // NOTE: Missing auth file is fine — flags may already carry the credentials.
     let auth = crate::commands::auth::load().unwrap_or_default();
-    let tcp = TcpStream::connect(format!("{}:{}", host, port)).await?;
-    let mut socket = crate::tls::connect(tcp, &host).await?;
+    let client = crate::commands::connect(&host, port).await?;
 
     // INFO: `--github` forces the GitHub forge. Explicit --token/--user win over
     //       the saved auth.toml values. An empty branch means "forge default".
-    let req = DeployRequest {
-        protocol_version: common::PROTOCOL_VERSION.to_string(),
-        msg_type: "deploy".into(),
-        repo,
-        forge: if github { "github".into() } else { forge },
-        branch: if branch.is_empty() {
-            None
-        } else {
-            Some(branch)
-        },
-        auth_user: user.or(auth.user),
-        auth_password: token.or(auth.password),
-        daemon_token,
-    };
-
-    send_json(&mut socket, &req).await?;
-    let resp: DeployResponse = recv_json(&mut socket).await?;
+    let reply = client
+        .deploy(
+            daemon_token,
+            repo,
+            if github { "github".into() } else { forge },
+            if branch.is_empty() {
+                None
+            } else {
+                Some(branch)
+            },
+            user.or(auth.user),
+            token.or(auth.password),
+        )
+        .await?;
 
     // ERROR: Surface a failed deploy as a non-zero exit code (main logs it).
-    if resp.success {
-        info!("SUCCESS: {}", resp.message);
+    if reply.success {
+        info!("SUCCESS: {}", reply.message);
         Ok(())
     } else {
-        anyhow::bail!("{}", resp.message);
+        anyhow::bail!("{}", reply.message);
     }
 }

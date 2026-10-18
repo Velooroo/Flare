@@ -3,3 +3,7 @@
 .continue/
 .DS_Store
 test-app/
+
+# The monolith RPC layer is developed in its own repository; Flare consumes it
+# as a path dependency. Keep it out of this repo's history.
+/monolith/

@@ -1,12 +1,11 @@
 //! `flare start|stop|restart|rollback` — remote app lifecycle.
 //!
-//! All four send a `manage` request. The daemon requires the daemon token, so the
-//! CLI resolves one either from `--device <id|name>` or from a saved device whose
-//! host:port matches. Without a token the daemon answers "Invalid token".
+//! All four send a `manage` request over Flare's TLS. The daemon requires the
+//! daemon token, so the CLI resolves one either from `--device <id|name>` or from
+//! a saved device whose host:port matches. Without a token the daemon answers
+//! "Invalid token".
 
 use anyhow::Result;
-use common::{ManageRequest, ManageResponse, recv_json, send_json};
-use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
 use tracing::info;
 
@@ -52,32 +51,24 @@ async fn manage(
 ) -> Result<()> {
     let (host, port, token) = resolve_target(host, port, device)?;
 
-    let addr = format!("{}:{}", host, port);
     // INFO: 5-second connect timeout so a dead host fails fast.
-    let tcp = timeout(Duration::from_secs(5), TcpStream::connect(addr)).await??;
-
-    let mut socket = crate::tls::connect(tcp, &host).await?;
+    let client = timeout(
+        Duration::from_secs(5),
+        crate::commands::connect(&host, port),
+    )
+    .await??;
 
     // INFO: `user/repo` is normalized to `user_repo` to match the on-disk app dir.
     let app_normalize = app.replace("/", "_");
 
-    let req = ManageRequest {
-        protocol_version: common::PROTOCOL_VERSION.to_string(),
-        msg_type: "manage".into(),
-        app: app_normalize,
-        action,
-        daemon_token: token,
-    };
+    let reply = client.manage(token, app_normalize, action).await?;
 
-    send_json(&mut socket, &req).await?;
-    let resp: ManageResponse = recv_json(&mut socket).await?;
-
-    if resp.success {
-        info!("SUCCESS: {}", resp.message);
+    if reply.success {
+        info!("SUCCESS: {}", reply.message);
         Ok(())
     } else {
         // ERROR: Surface the daemon's reason (e.g. "Invalid token") as a CLI error
         //        instead of silently succeeding.
-        anyhow::bail!("{}", resp.message);
+        anyhow::bail!("{}", reply.message);
     }
 }

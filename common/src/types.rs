@@ -1,20 +1,16 @@
-//! Wire protocol + configuration schema shared by the CLI and the daemon.
+//! Configuration schema shared by the CLI and the daemon, plus the typed
+//! values that cross the control API.
 //!
-//! The daemon understands four message kinds, each with its own request/response
-//! pair: `deploy`, `manage`, `register_token` and `health`. Every request carries
-//! `protocol_version` so both sides can refuse to talk to an incompatible peer.
+//! INFO: The control API itself is declared with `monolith::api!` in `lib.rs`.
+//!       The `*Reply` structs here are its return types.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// INFO: Bump this whenever the on-the-wire JSON shape changes. The daemon rejects
-//       any message whose `protocol_version` differs (see handlers/mod.rs).
-pub const PROTOCOL_VERSION: &str = "1";
-
-#[derive(Debug, Serialize, Deserialize)]
+/// Input for one deploy. The CLI fills this from its flags; the daemon feeds it
+/// straight to `pipeline::run`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeployRequest {
-    pub protocol_version: String,
-    pub msg_type: String,
     pub repo: String,
     pub forge: String,
     // INFO: Git branch/ref to fetch. Missing or empty means the forge default;
@@ -23,36 +19,37 @@ pub struct DeployRequest {
     pub branch: Option<String>,
     pub auth_user: Option<String>,
     pub auth_password: Option<String>,
-    pub daemon_token: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DeployResponse {
-    pub protocol_version: String,
+/// Result of a deploy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeployReply {
     pub success: bool,
     pub message: String,
     pub app_dir: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ManageRequest {
-    pub protocol_version: String,
-    pub msg_type: String,
-    pub app: String,
-    pub action: String,
-    // INFO: Proof that the caller is a paired device. The daemon rejects the
-    //       request when this does not match a registered token.
-    //       `#[serde(default)]` keeps old clients from failing to deserialize;
-    //       they simply get "Invalid token".
-    #[serde(default)]
-    pub daemon_token: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ManageResponse {
-    pub protocol_version: String,
+/// Result of a lifecycle action (start/stop/restart/rollback).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManageReply {
     pub success: bool,
     pub message: String,
+}
+
+/// Liveness of one app.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthReply {
+    pub app: String,
+    pub alive: bool,
+    pub pid: Option<u32>,
+    /// Set when the call was refused (e.g. "Invalid token").
+    pub message: Option<String>,
+}
+
+/// Result of enrolling a new CLI token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterReply {
+    pub success: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -245,26 +242,4 @@ pub struct Device {
 pub struct FlareConfig {
     #[serde(default)]
     pub devices: Vec<Device>,
-}
-
-/// Sent by `flare sync` to enroll a new CLI token on the daemon.
-///
-/// INFO: Trust-on-first-use with a twist: the *first* enrollment on a fresh
-///       daemon must present the one-time pairing code the daemon printed at
-///       startup. After that, the daemon requires a valid `existing_token`.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterTokenRequest {
-    pub protocol_version: String,
-    pub msg_type: String,
-    pub token_hash: String,
-    #[serde(default)]
-    pub existing_token: Option<String>,
-    #[serde(default)]
-    pub pairing_code: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterTokenResponse {
-    pub protocol_version: String,
-    pub success: bool,
 }
